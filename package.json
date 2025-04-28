@@ -1,0 +1,54 @@
+{
+  "name": "electron_image_preprocessing_leggio",
+  "version": "1.0.0",
+  "description": "App for preprocessing images for Leggio project",
+  "main": "main.js",
+  "author": {
+    "name": "Edoardo",
+    "email": "edoardo.gabrielli@grupposcai.it"
+  },
+  "homepage": "https://imageprocessorleggio.com",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.space.imageprocessorleggio",
+    "productName": "ImageProcessorLeggio",
+    "buildDependenciesFromSource": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "maintainer": "Edoardo <tuamail@example.com>",
+      "category": "Utility"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    }
+  },
+  "keywords": [],
+  "license": "ISC",
+  "dependencies": {
+    "cli-progress": "^3.12.0",
+    "sharp": "^0.34.1"
+  },
+  "devDependencies": {
+    "electron": "^35.2.1",
+    "electron-builder": "^26.0.12"
+  }
+}

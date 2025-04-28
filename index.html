@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head><title>Leggio Preprocessing Immagini</title></head>
+<body>
+  <h1>Elaborazione immagini per Leggio</h1>
+
+  <button onclick="select()">Seleziona cartella</button>
+  <div id="selectedFolder" style="margin-top:10px; font-style:italic;"></div>
+
+  <button onclick="start()" disabled id="processButton" style="margin-top:20px;">Processa</button>
+  <progress id="progressBar" value="0" max="100"></progress>
+
+
+<script>
+  let selectedFolder = null;
+
+  async function select() {
+    const folder = await window.electronAPI.selectFolder();
+    if (folder) {
+      selectedFolder = folder;
+      document.getElementById('selectedFolder').textContent = `Cartella selezionata: ${folder}`;
+      document.getElementById('processButton').disabled = false;
+    }
+  }
+
+  async function start() {
+    if (selectedFolder) {
+      await window.electronAPI.processImages(selectedFolder);
+      alert('Finito!');
+    }
+  }
+
+  window.electronAPI.onProgressUpdate(({ current, total }) => {
+    const percent = Math.floor((current / total) * 100);
+    document.getElementById('progressBar').value = percent;
+  });
+
+</script>
+</body>
+</html>
