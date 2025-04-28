@@ -24,13 +24,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build Electron app with keepalive
-        run: |
-          npm run build &
-          while kill -0 $! 2> /dev/null; do
-            echo "Still building Electron app..."
-            sleep 60
-          done
+      - name: Build Electron app
+        run: npm run build
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
