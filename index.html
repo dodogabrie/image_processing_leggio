@@ -8,11 +8,14 @@
   <div id="selectedFolder" style="margin-top:10px; font-style:italic;"></div>
 
   <button onclick="start()" disabled id="processButton" style="margin-top:20px;">Processa</button>
+  <button onclick="stop()" disabled id="stopButton" style="margin-top:20px;">Ferma</button>
   <progress id="progressBar" value="0" max="100"></progress>
-
+  <div id="loader" style="margin-top:10px; color: #888; display:none;">Conteggio cartelle in corso...</div>
+  <div id="progressText" style="margin-top:10px; font-family:monospace;"></div>
 
 <script>
   let selectedFolder = null;
+  let processing = false;
 
   async function select() {
     const folder = await window.electronAPI.selectFolder();
@@ -25,14 +28,44 @@
 
   async function start() {
     if (selectedFolder) {
+      processing = true;
+      document.getElementById('progressText').textContent = '';
+      document.getElementById('progressBar').value = 0;
+      document.getElementById('loader').style.display = 'block';
+      document.getElementById('stopButton').disabled = false;
+      document.getElementById('processButton').disabled = true;
       await window.electronAPI.processImages(selectedFolder);
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('stopButton').disabled = true;
+      document.getElementById('processButton').disabled = false;
+      processing = false;
       alert('Finito!');
     }
   }
 
-  window.electronAPI.onProgressUpdate(({ current, total }) => {
-    const percent = Math.floor((current / total) * 100);
-    document.getElementById('progressBar').value = percent;
+  function stop() {
+    if (processing) {
+      window.electronAPI.stopProcessing();
+      document.getElementById('stopButton').disabled = true;
+    }
+  }
+
+  window.electronAPI.onProgressUpdate((progress) => {
+    document.getElementById('loader').style.display = 'none';
+    const { current, total, folderIdx, folderTotal, currentFolder, currentFile } = progress;
+    let percent = 0;
+    if (typeof current === 'number' && typeof total === 'number' && total > 0) {
+      percent = Math.floor((current / total) * 100);
+      document.getElementById('progressBar').value = percent;
+    }
+    let text = '';
+    if (folderIdx && folderTotal && currentFolder) {
+      text += `Cartella ${folderIdx} di ${folderTotal}: ${currentFolder}\n`;
+    }
+    if (typeof current === 'number' && typeof total === 'number' && currentFile) {
+      text += `File ${current} di ${total}: ${currentFile}`;
+    }
+    document.getElementById('progressText').textContent = text;
   });
 
 </script>

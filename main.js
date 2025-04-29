@@ -21,10 +21,31 @@ ipcMain.handle('dialog:openFolder', async () => {
   return filePaths[0];
 });
 
+let shouldStop = false;
+
 ipcMain.handle('process:images', async (event, dir) => {
   const webContents = event.sender;
-  await processDir(dir, (progress) => {
-    webContents.send('progress:update', progress);
-  });
+  shouldStop = false;
+  try {
+    await processDir(dir, (progress) => {
+      webContents.send('progress:update', progress);
+    }, undefined, undefined, undefined, () => shouldStop);
+    return true;
+  } catch (err) {
+    console.error('Errore durante l\'elaborazione delle immagini:', err);
+    return false;
+  }
 });
+
+ipcMain.on('process:stop', () => {
+  shouldStop = true;
+});
+
 app.whenReady().then(createWindow);
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection:', reason);
+});
