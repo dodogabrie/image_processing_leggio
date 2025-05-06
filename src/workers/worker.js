@@ -13,7 +13,6 @@ const [input, output] = process.argv.slice(2);
     let quality = Math.round(90 - originalKB / 25);
     quality = Math.max(20, Math.min(quality, 90));
 
-    console.log(generoErrore)
     const buffer = await sharp(input).webp({ quality }).toBuffer();
     await fs.promises.writeFile(output, buffer);
     console.log(`Converted: ${input} → ${output} (quality=${quality}, ${(buffer.length / 1024).toFixed(1)} KB)`);
