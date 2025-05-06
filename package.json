@@ -9,7 +9,7 @@
   },
   "homepage": "https://imageprocessorleggio.com",
   "scripts": {
-    "start": "electron .",
+    "start": "cross-env NODE_ENV=development electron .",
     "build": "electron-builder"
   },
   "build": {
@@ -50,6 +50,7 @@
     "sharp": "^0.34.1"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "electron": "^35.2.1",
     "electron-builder": "^26.0.12"
   }
