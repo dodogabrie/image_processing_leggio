@@ -23,8 +23,14 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install OpenCV dependencies (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopencv-dev python3-opencv
+
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-optional
 
       - name: Build Electron app
         run: npm run build
