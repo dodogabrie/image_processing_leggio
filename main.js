@@ -63,6 +63,11 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
       (log) => { webContents.send('worker:log', log); } // <--- log callback
     );
 
+    // --- STOP CHECK dopo immagini ---
+    if (shouldStop) {
+      return { success: false, error: 'Processo interrotto dall\'utente.' };
+    }
+
     // Cerca il primo file .csv nella cartella di input
     let csvPath = null;
     try {
@@ -71,6 +76,10 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
       if (csvPath) csvPath = require('path').join(dir, csvPath);
     } catch {}
     if (csvPath) {
+      // --- STOP CHECK prima di CSV ---
+      if (shouldStop) {
+        return { success: false, error: 'Processo interrotto dall\'utente.' };
+      }
       await organizeFromCsv(
         csvPath,
         finalOutputDir || require('path').join(process.env.HOME || process.env.USERPROFILE, 'output1', inputBaseName),
@@ -79,6 +88,11 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
         maxCsvLine,
         (log) => { webContents.send('worker:log', log); } // <--- log callback per organizeFromCsv
       );
+
+      // --- STOP CHECK prima di ZIP ---
+      if (shouldStop) {
+        return { success: false, error: 'Processo interrotto dall\'utente.' };
+      }
 
       // --- ZIP WORKER CALL ---
       const baseOut = finalOutputDir || require('path').join(process.env.HOME || process.env.USERPROFILE, 'output1', inputBaseName);
@@ -89,6 +103,8 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
         await require('fs').promises.access(organizedDir);
         await require('fs').promises.access(organizedThumbDir);
         await new Promise((resolve, reject) => {
+          // --- STOP CHECK dentro ZIP ---
+          if (shouldStop) return reject(new Error('Processo interrotto dall\'utente.'));
           const args = [
             require('path').join(__dirname, 'src', 'workers', 'zip_worker.js'),
             organizedDir,

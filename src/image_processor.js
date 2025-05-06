@@ -6,7 +6,7 @@ const { getAllFolders } = require('./scripts/utils');
 
 module.exports = { processDir };
 
-const MAX_PARALLEL = Math.max(2, Math.floor(os.cpus().length / 2));
+const MAX_PARALLEL = Math.max(1, Math.floor(os.cpus().length / 2));
 
 const THUMBNAIL_ALIASES = {
   low_quality: { size: [640, 480], quality: 75, crop: false, format: 'webp' },
@@ -199,6 +199,7 @@ async function processDir(
         }
       } catch {
         // file non esiste, va processato
+        if (logCallback) logCallback(`Processing file: ${fullPath}`);
         console.log('Processing file:', fullPath);
       }
       if (!skip) {
@@ -206,8 +207,11 @@ async function processDir(
           await convertWithSpawn(fullPath, output, 1, logCallback);
           processed++;
         } catch (err) {
+          // INVIA ANCHE ALLA CALLBACK!
+          if (logCallback) logCallback(`[ERRORE WORKER] ${fullPath} - ${err && err.stack ? err.stack : err}`);
+          // console.error va bene per debug, ma la UI ora riceve tutto
           console.error('Errore worker:', fullPath, err);
-          errorFiles && errorFiles.push(fullPath + ' - ' + err.message);
+          errorFiles && errorFiles.push(fullPath + ' - ' + (err && err.message ? err.message : String(err)));
           return;
         }
       }
@@ -220,6 +224,7 @@ async function processDir(
         try {
           await createThumbnailWithSpawn(output, thumbPath, alias, logCallback);
         } catch (err) {
+          if (logCallback) logCallback(`[ERRORE THUMBNAIL] ${output} (${alias}) - ${err && err.stack ? err.stack : err}`);
           console.error('Errore thumbnail:', output, alias, err);
           errorFiles && errorFiles.push(output + ` (${alias}) - ` + err.message);
         }
@@ -263,6 +268,7 @@ async function processDir(
     try {
       await fs.copyFile(fullPath, output);
     } catch (err) {
+      if (logCallback) logCallback(`[ERRORE XML] ${fullPath} - ${err && err.stack ? err.stack : err}`);
       console.error('Errore copia XML:', fullPath, err.message);
       errorFiles.push(`${fullPath} - ${err.message}`);
     }
@@ -274,6 +280,7 @@ async function processDir(
       await fs.writeFile(errorFilePath, errorFiles.join('\n'), 'utf8');
       console.log('File errori scritto in:', errorFilePath);
     } catch (err) {
+      if (logCallback) logCallback(`[ERRORE SCRITTURA FILE ERRORI] ${err && err.stack ? err.stack : err}`);
       console.error('Errore scrittura file errori:', err.message);
     }
   }
