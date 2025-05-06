@@ -85,6 +85,7 @@
         document.getElementById('loader').style.display = 'none';
         document.getElementById('stopButton').disabled = true;
         document.getElementById('processButton').disabled = false;
+        document.getElementById('progressText').textContent = 'Contattare l\'amministrazione.';
         processing = false;
         alert('Errore JS: ' + (err && err.message ? err.message : err));
       }
