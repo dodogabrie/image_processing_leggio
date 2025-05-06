@@ -1,6 +1,8 @@
 const { app, BrowserWindow } = require('electron');
 const { ipcMain, dialog } = require('electron');
 
+const { fork } = require('child_process');
+const fs = require('fs').promises;
 const { processDir } = require('./src/image_processor');
 const { organizeFromCsv } = require('./src/workers/organize_by_csv');
 
@@ -93,33 +95,35 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
       }
 
       // --- ZIP WORKER CALL ---
-      const baseOut = finalOutputDir || require('path').join(process.env.HOME || process.env.USERPROFILE, 'output1', inputBaseName);
-      const organizedDir = require('path').join(baseOut, 'organized');
-      const organizedThumbDir = require('path').join(baseOut, 'organized_thumbnails');
-      const outputZip = require('path').join(baseOut, 'final_output.zip');
+      const baseOut = finalOutputDir || path.join(process.env.HOME || process.env.USERPROFILE, 'output1', inputBaseName);
+      const organizedDir = path.join(baseOut, 'organized');
+      const organizedThumbDir = path.join(baseOut, 'organized_thumbnails');
+      const outputZip = path.join(baseOut, 'final_output.zip');
+
       try {
-        await require('fs').promises.access(organizedDir);
-        await require('fs').promises.access(organizedThumbDir);
+        await fs.access(organizedDir);
+        await fs.access(organizedThumbDir);
+
         await new Promise((resolve, reject) => {
-          // --- STOP CHECK dentro ZIP ---
           if (shouldStop) return reject(new Error('Processo interrotto dall\'utente.'));
-          const args = [
-            require('path').join(__dirname, 'src', 'workers', 'zip_worker.js'),
-            organizedDir,
-            organizedThumbDir,
-            outputZip
-          ];
-          const child = require('child_process').spawn(process.execPath, args, {
-            stdio: ['ignore', 'pipe', 'pipe'],
-          });
+          const zipWorkerPath = path.join(__dirname, 'src', 'workers', 'zip_worker.js');
+          const child = fork(
+            zipWorkerPath,
+            [ organizedDir, organizedThumbDir, outputZip ],
+            {
+              execPath: process.env.NODE_ENV === 'development' ? 'node' : process.execPath,
+              stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+              windowsHide: true
+            }
+          );
           child.on('exit', code => {
-            if (code === 0) return resolve();
-            reject(new Error(`zip_worker exited with code ${code}`));
+            if (code === 0) resolve();
+            else reject(new Error(`zip_worker exited with code ${code}`));
           });
         });
+
         webContents.send('zip:done', outputZip);
       } catch (err) {
-        // Propaga l'errore verso l'alto per mostrarlo nell'alert
         console.error('Errore creazione zip finale:', err.message);
         webContents.send('zip:error', err.message);
         throw new Error('Errore creazione zip finale: ' + err.message);

@@ -19,10 +19,15 @@ const [input, output] = process.argv.slice(2);
     let quality = Math.round(90 - originalKB / 25);
     quality = Math.max(20, Math.min(quality, 90));
 
-    const buffer = await sharp(input).webp({ quality }).toBuffer();
+    const info = await sharp(input)
+      .webp({ quality })
+      .toFile(output);
 
-    await fs.promises.writeFile(output, buffer);
-    console.log(`Converted: ${input} → ${output} (quality=${quality}, ${(buffer.length / 1024).toFixed(1)} KB)`);
+    console.log(
+      `Converted: ${input} → ${output} ` +
+      `(quality=${quality}, ${(info.size/1024).toFixed(1)} KB)`
+    );
+
     process.exit(0);
   } catch (err) {
     console.error(err.stack || err.message);
