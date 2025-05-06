@@ -13,38 +13,54 @@ const THUMBNAIL_ALIASES = {
   gallery: { size: [1920, 1080], quality: 75, crop: false, format: 'webp' }
 };
 
-function cropPageWithSpawn(input, output, minArea = 200000) {
-  const pythonPath = path.join(__dirname, 'venv', 'bin', 'python3'); // o 'python.exe' su Windows
+function cropPageWithSpawn(input, output, minArea = 200000, logCallback) {
+  const pythonPath = process.platform === 'win32'
+    ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
+    : path.join(__dirname, 'venv', 'bin', 'python3');
   const scriptPath = path.join(__dirname, 'scripts', 'crop.py');
 
   return new Promise((resolve, reject) => {
     const child = spawn(pythonPath, [scriptPath, input, output, String(minArea)], {
-      stdio: ['ignore', 'inherit', 'inherit']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
     });
+
+    if (logCallback) {
+      child.stdout && child.stdout.on('data', d => logCallback(d.toString()));
+      child.stderr && child.stderr.on('data', d => logCallback(d.toString()));
+    }
 
     child.on('exit', code => {
       if (code === 0) return resolve(true);
-      if (code === 2) return resolve(false); // crop skipped
+      if (code === 2) return resolve(false);
+      if (logCallback) logCallback(`[ERRORE WORKER] crop.py exited with code ${code}`);
       reject(new Error(`crop.py exited with code ${code}`));
     });
   });
 }
 
-function convertWithSpawn(input, output, retries = 1) {
+function convertWithSpawn(input, output, retries = 1, logCallback) {
   return new Promise((resolve, reject) => {
     const child = spawn('node', [path.join(__dirname, 'workers', 'worker.js'), input, output], {
-      stdio: ['ignore', 'inherit', 'inherit']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
     });
+
+    if (logCallback) {
+      child.stdout && child.stdout.on('data', d => logCallback(d.toString()));
+      child.stderr && child.stderr.on('data', d => logCallback(d.toString()));
+    }
 
     child.on('exit', code => {
       if (code === 0) return resolve();
-      if (retries > 0) return resolve(convertWithSpawn(input, output, retries - 1));
+      if (retries > 0) return resolve(convertWithSpawn(input, output, retries - 1, logCallback));
+      if (logCallback) logCallback(`[ERRORE WORKER] worker.js exited with code ${code}`);
       reject(new Error(`worker exited with code ${code}`));
     });
   });
 }
 
-function createThumbnailWithSpawn(input, output, alias) {
+function createThumbnailWithSpawn(input, output, alias, logCallback) {
   return new Promise((resolve, reject) => {
     const args = [
       path.join(__dirname, 'workers', 'thumbnail_worker.js'),
@@ -53,16 +69,22 @@ function createThumbnailWithSpawn(input, output, alias) {
       JSON.stringify(THUMBNAIL_ALIASES[alias])
     ];
     const child = spawn('node', args, {
-      stdio: ['ignore', 'inherit', 'inherit']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
     });
+    if (logCallback) {
+      child.stdout && child.stdout.on('data', d => logCallback(d.toString()));
+      child.stderr && child.stderr.on('data', d => logCallback(d.toString()));
+    }
     child.on('exit', code => {
       if (code === 0) return resolve();
+      if (logCallback) logCallback(`[ERRORE WORKER] thumbnail_worker.js exited with code ${code}`);
       reject(new Error(`thumbnail_worker exited with code ${code}`));
     });
   });
 }
 
-async function runZipWorker(organizedDir, organizedThumbDir, outputZip) {
+async function runZipWorker(organizedDir, organizedThumbDir, outputZip, logCallback) {
   return new Promise((resolve, reject) => {
     const args = [
       path.join(__dirname, 'workers', 'zip_worker.js'),
@@ -71,10 +93,16 @@ async function runZipWorker(organizedDir, organizedThumbDir, outputZip) {
       outputZip
     ];
     const child = spawn('node', args, {
-      stdio: ['ignore', 'inherit', 'inherit']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
     });
+    if (logCallback) {
+      child.stdout && child.stdout.on('data', d => logCallback(d.toString()));
+      child.stderr && child.stderr.on('data', d => logCallback(d.toString()));
+    }
     child.on('exit', code => {
       if (code === 0) return resolve();
+      if (logCallback) logCallback(`[ERRORE WORKER] zip_worker.js exited with code ${code}`);
       reject(new Error(`zip_worker exited with code ${code}`));
     });
   });
@@ -110,7 +138,8 @@ async function processDir(
   shouldStopFn = () => false,
   errorFiles = null,
   isRoot = true,
-  testOnly = false
+  testOnly = false,
+  logCallback = null
 ) {
   if (shouldStopFn()) return;
 
@@ -148,7 +177,7 @@ async function processDir(
   for (const sub of dirs) {
     if (shouldStopFn()) return;
     if (sub === '$RECYCLE.BIN') continue;
-    await processDir(path.join(dir, sub), progressCallback, baseInput, baseOutput, folderInfo, shouldStopFn, errorFiles, false, testOnly);
+    await processDir(path.join(dir, sub), progressCallback, baseInput, baseOutput, folderInfo, shouldStopFn, errorFiles, false, testOnly, logCallback);
   }
 
   // Processa immagini in parallelo usando worker.js
@@ -174,7 +203,7 @@ async function processDir(
       }
       if (!skip) {
         try {
-          await convertWithSpawn(fullPath, output);
+          await convertWithSpawn(fullPath, output, 1, logCallback);
           processed++;
         } catch (err) {
           console.error('Errore worker:', fullPath, err);
@@ -189,7 +218,7 @@ async function processDir(
         const thumbName = path.basename(output, '.webp') + `_${alias}.webp`;
         const thumbPath = path.join(thumbnailsBase, thumbName);
         try {
-          await createThumbnailWithSpawn(output, thumbPath, alias);
+          await createThumbnailWithSpawn(output, thumbPath, alias, logCallback);
         } catch (err) {
           console.error('Errore thumbnail:', output, alias, err);
           errorFiles && errorFiles.push(output + ` (${alias}) - ` + err.message);
@@ -212,10 +241,10 @@ async function processDir(
       for (const file of limited) {
         const fullPath = path.join(dir, file);
         const output = path.join(currentOutputDir, path.basename(fullPath).replace(/\.\w+$/, '.webp'));
-        await convertWithSpawn(fullPath, output);
+        await convertWithSpawn(fullPath, output, 1, logCallback);
         const outputCropped = output.replace('.webp', '_crop.webp')
         const croppedPath = path.join(currentCroppedDir, path.basename(outputCropped));
-        await cropPageWithSpawn(output, croppedPath);
+        await cropPageWithSpawn(output, croppedPath, 200000, logCallback);
       }
     }
     else {
