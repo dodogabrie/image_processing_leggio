@@ -13,7 +13,12 @@ const THUMBNAIL_ALIASES = {
   gallery: { size: [1920, 1080], quality: 75, crop: false, format: 'webp' }
 };
 
-function cropPageWithSpawn(input, output, minArea = 200000, logCallback) {
+function getNodeCmd() {
+  // Usa 'node' se lanciato da npm start, altrimenti process.execPath
+  return process.env.npm_lifecycle_event === 'start' ? 'node' : process.execPath;
+}
+
+function cropPageWithSpawn(input, output, minArea = 200000) {
   const pythonPath = process.platform === 'win32'
     ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
     : path.join(__dirname, 'venv', 'bin', 'python3');
@@ -22,45 +27,43 @@ function cropPageWithSpawn(input, output, minArea = 200000, logCallback) {
   return new Promise((resolve, reject) => {
     const child = spawn(pythonPath, [scriptPath, input, output, String(minArea)], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
     });
 
-    if (logCallback) {
-      child.stdout && child.stdout.on('data', d => logCallback(d.toString()));
-      child.stderr && child.stderr.on('data', d => logCallback(d.toString()));
-    }
+    child.stdout && child.stdout.on('data', d => process.stdout.write(d));
+    child.stderr && child.stderr.on('data', d => process.stderr.write(d));
 
     child.on('exit', code => {
       if (code === 0) return resolve(true);
       if (code === 2) return resolve(false);
-      if (logCallback) logCallback(`[ERRORE WORKER] crop.py exited with code ${code}`);
       reject(new Error(`crop.py exited with code ${code}`));
     });
   });
 }
 
-function convertWithSpawn(input, output, retries = 1, logCallback) {
+function convertWithSpawn(input, output, retries = 1) {
   return new Promise((resolve, reject) => {
-    const child = spawn('node', [path.join(__dirname, 'workers', 'worker.js'), input, output], {
+    const child = spawn(getNodeCmd(), [path.join(__dirname, 'workers', 'worker.js'), input, output], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
     });
 
-    if (logCallback) {
-      child.stdout && child.stdout.on('data', d => logCallback(d.toString()));
-      child.stderr && child.stderr.on('data', d => logCallback(d.toString()));
-    }
+    child.stdout && child.stdout.on('data', d => {
+      const str = d.toString();
+      process.stdout.write(str);
+    });
+    child.stderr && child.stderr.on('data', d => {
+      const str = d.toString();
+      process.stderr.write(str);
+    });
 
     child.on('exit', code => {
       if (code === 0) return resolve();
-      if (retries > 0) return resolve(convertWithSpawn(input, output, retries - 1, logCallback));
-      if (logCallback) logCallback(`[ERRORE WORKER] worker.js exited with code ${code}`);
+      if (retries > 0) return resolve(convertWithSpawn(input, output, retries - 1));
       reject(new Error(`worker exited with code ${code}`));
     });
   });
 }
 
-function createThumbnailWithSpawn(input, output, alias, logCallback) {
+function createThumbnailWithSpawn(input, output, alias) {
   return new Promise((resolve, reject) => {
     const args = [
       path.join(__dirname, 'workers', 'thumbnail_worker.js'),
@@ -68,42 +71,14 @@ function createThumbnailWithSpawn(input, output, alias, logCallback) {
       output,
       JSON.stringify(THUMBNAIL_ALIASES[alias])
     ];
-    const child = spawn('node', args, {
+    const child = spawn(getNodeCmd(), args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
     });
-    if (logCallback) {
-      child.stdout && child.stdout.on('data', d => logCallback(d.toString()));
-      child.stderr && child.stderr.on('data', d => logCallback(d.toString()));
-    }
+    child.stdout && child.stdout.on('data', d => process.stdout.write(d));
+    child.stderr && child.stderr.on('data', d => process.stderr.write(d));
     child.on('exit', code => {
       if (code === 0) return resolve();
-      if (logCallback) logCallback(`[ERRORE WORKER] thumbnail_worker.js exited with code ${code}`);
       reject(new Error(`thumbnail_worker exited with code ${code}`));
-    });
-  });
-}
-
-async function runZipWorker(organizedDir, organizedThumbDir, outputZip, logCallback) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      path.join(__dirname, 'workers', 'zip_worker.js'),
-      organizedDir,
-      organizedThumbDir,
-      outputZip
-    ];
-    const child = spawn('node', args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
-    });
-    if (logCallback) {
-      child.stdout && child.stdout.on('data', d => logCallback(d.toString()));
-      child.stderr && child.stderr.on('data', d => logCallback(d.toString()));
-    }
-    child.on('exit', code => {
-      if (code === 0) return resolve();
-      if (logCallback) logCallback(`[ERRORE WORKER] zip_worker.js exited with code ${code}`);
-      reject(new Error(`zip_worker exited with code ${code}`));
     });
   });
 }
@@ -139,7 +114,6 @@ async function processDir(
   errorFiles = null,
   isRoot = true,
   testOnly = false,
-  logCallback = null
 ) {
   if (shouldStopFn()) return;
 
@@ -177,7 +151,7 @@ async function processDir(
   for (const sub of dirs) {
     if (shouldStopFn()) return;
     if (sub === '$RECYCLE.BIN') continue;
-    await processDir(path.join(dir, sub), progressCallback, baseInput, baseOutput, folderInfo, shouldStopFn, errorFiles, false, testOnly, logCallback);
+    await processDir(path.join(dir, sub), progressCallback, baseInput, baseOutput, folderInfo, shouldStopFn, errorFiles, false, testOnly);
   }
 
   // Processa immagini in parallelo usando worker.js
@@ -199,17 +173,13 @@ async function processDir(
         }
       } catch {
         // file non esiste, va processato
-        if (logCallback) logCallback(`Processing file: ${fullPath}`);
         console.log('Processing file:', fullPath);
       }
       if (!skip) {
         try {
-          await convertWithSpawn(fullPath, output, 1, logCallback);
+          await convertWithSpawn(fullPath, output, 1);
           processed++;
         } catch (err) {
-          // INVIA ANCHE ALLA CALLBACK!
-          if (logCallback) logCallback(`[ERRORE WORKER] ${fullPath} - ${err && err.stack ? err.stack : err}`);
-          // console.error va bene per debug, ma la UI ora riceve tutto
           console.error('Errore worker:', fullPath, err);
           errorFiles && errorFiles.push(fullPath + ' - ' + (err && err.message ? err.message : String(err)));
           return;
@@ -222,9 +192,8 @@ async function processDir(
         const thumbName = path.basename(output, '.webp') + `_${alias}.webp`;
         const thumbPath = path.join(thumbnailsBase, thumbName);
         try {
-          await createThumbnailWithSpawn(output, thumbPath, alias, logCallback);
+          await createThumbnailWithSpawn(output, thumbPath, alias);
         } catch (err) {
-          if (logCallback) logCallback(`[ERRORE THUMBNAIL] ${output} (${alias}) - ${err && err.stack ? err.stack : err}`);
           console.error('Errore thumbnail:', output, alias, err);
           errorFiles && errorFiles.push(output + ` (${alias}) - ` + err.message);
         }
@@ -246,10 +215,10 @@ async function processDir(
       for (const file of limited) {
         const fullPath = path.join(dir, file);
         const output = path.join(currentOutputDir, path.basename(fullPath).replace(/\.\w+$/, '.webp'));
-        await convertWithSpawn(fullPath, output, 1, logCallback);
+        await convertWithSpawn(fullPath, output, 1);
         const outputCropped = output.replace('.webp', '_crop.webp')
         const croppedPath = path.join(currentCroppedDir, path.basename(outputCropped));
-        await cropPageWithSpawn(output, croppedPath, 200000, logCallback);
+        await cropPageWithSpawn(output, croppedPath, 200000);
       }
     }
     else {
@@ -268,7 +237,6 @@ async function processDir(
     try {
       await fs.copyFile(fullPath, output);
     } catch (err) {
-      if (logCallback) logCallback(`[ERRORE XML] ${fullPath} - ${err && err.stack ? err.stack : err}`);
       console.error('Errore copia XML:', fullPath, err.message);
       errorFiles.push(`${fullPath} - ${err.message}`);
     }
@@ -280,7 +248,6 @@ async function processDir(
       await fs.writeFile(errorFilePath, errorFiles.join('\n'), 'utf8');
       console.log('File errori scritto in:', errorFilePath);
     } catch (err) {
-      if (logCallback) logCallback(`[ERRORE SCRITTURA FILE ERRORI] ${err && err.stack ? err.stack : err}`);
       console.error('Errore scrittura file errori:', err.message);
     }
   }

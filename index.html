@@ -26,10 +26,6 @@
   <div id="progressText" style="margin-top:10px; font-family:monospace;"></div>
   <div id="csvProgressText" style="margin-top:10px; font-family:monospace; color: #007;">
   </div>
-  <label style="margin-top:10px;display:block;">
-    <span>Log dei worker:</span>
-    <textarea id="workerLog" style="width:100%;min-height:60px;max-height:300px;resize:vertical;display:block;font-family:monospace;" readonly></textarea>
-  </label>
 <script>
   let selectedFolder = null;
   let selectedOutput = null;
@@ -124,22 +120,6 @@
       text += `\nUltimo: ${codice}`;
     }
     document.getElementById('csvProgressText').textContent = text;
-  });
-
-  // Log worker
-  let workerLogElem = document.getElementById('workerLog');
-  window.electronAPI.onWorkerLog((log) => {
-    if (workerLogElem.value.length > 100000) {
-      workerLogElem.value = '';
-    }
-    workerLogElem.value += log + '\n';
-    workerLogElem.scrollTop = workerLogElem.scrollHeight;
-    // Evidenzia errori (opzionale, solo visuale)
-    if (log.includes('[ERRORE WORKER]')) {
-      workerLogElem.style.color = 'red';
-    } else {
-      workerLogElem.style.color = '';
-    }
   });
 
 </script>

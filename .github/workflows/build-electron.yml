@@ -3,17 +3,13 @@ name: Build and Release Electron App
 on:
   push:
     tags:
-      - 'v*'   # Quando fai push di un tag tipo v1.0.0
+      - 'v*'  
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -23,17 +19,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install dmg-license (macOS only)
-        if: runner.os == 'macOS'
-        run: npm install dmg-license --save-dev || true
-
-      - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
+      - name: Install dependencies (Windows only)
         run: npm install
-
-      - name: Install dependencies (Linux/Windows)
-        if: runner.os != 'macOS'
-        run: npm install --no-optional
 
       - name: Build Electron app
         run: npm run build
@@ -41,25 +28,6 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.os }}
+          name: build-windows-latest
           path: dist/
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*.*
 

@@ -59,8 +59,7 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
       () => shouldStop,
       undefined,
       true,
-      testOnly,
-      (log) => { webContents.send('worker:log', log); } // <--- log callback
+      testOnly
     );
 
     // --- STOP CHECK dopo immagini ---
@@ -85,8 +84,7 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
         finalOutputDir || require('path').join(process.env.HOME || process.env.USERPROFILE, 'output1', inputBaseName),
         finalOutputDir || require('path').join(process.env.HOME || process.env.USERPROFILE, 'output1', inputBaseName),
         (csvProgress) => webContents.send('csv:progress', csvProgress),
-        maxCsvLine,
-        (log) => { webContents.send('worker:log', log); } // <--- log callback per organizeFromCsv
+        maxCsvLine
       );
 
       // --- STOP CHECK prima di ZIP ---
@@ -111,12 +109,9 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
             organizedThumbDir,
             outputZip
           ];
-          const child = require('child_process').spawn('node', args, {
+          const child = require('child_process').spawn(process.execPath, args, {
             stdio: ['ignore', 'pipe', 'pipe'],
-            windowsHide: true
           });
-          child.stdout && child.stdout.on('data', d => webContents.send('worker:log', d.toString()));
-          child.stderr && child.stderr.on('data', d => webContents.send('worker:log', d.toString()));
           child.on('exit', code => {
             if (code === 0) return resolve();
             reject(new Error(`zip_worker exited with code ${code}`));

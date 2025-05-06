@@ -6,6 +6,12 @@ const [input, output] = process.argv.slice(2);
 
 (async () => {
   try {
+    // Se il file di output esiste già, esci subito
+    if (fs.existsSync(output)) {
+      console.error(`Output file already exists: ${output}`);
+      process.exit(0);
+    }
+
     const { size } = await stat(input); // in byte
     const originalKB = size / 1024;
 
@@ -14,6 +20,7 @@ const [input, output] = process.argv.slice(2);
     quality = Math.max(20, Math.min(quality, 90));
 
     const buffer = await sharp(input).webp({ quality }).toBuffer();
+
     await fs.promises.writeFile(output, buffer);
     console.log(`Converted: ${input} → ${output} (quality=${quality}, ${(buffer.length / 1024).toFixed(1)} KB)`);
     process.exit(0);
