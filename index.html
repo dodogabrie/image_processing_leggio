@@ -7,14 +7,28 @@
   <button onclick="select()">Seleziona cartella</button>
   <div id="selectedFolder" style="margin-top:10px; font-style:italic;"></div>
 
+  <button onclick="selectOutput()">Seleziona cartella output</button>
+  <div id="selectedOutput" style="margin-top:10px; font-style:italic;"></div>
+
+  <label style="margin-top:10px;display:block;">
+    <input type="checkbox" id="testOnlyCheckbox"> Test solo una immagine per cartella
+  </label>
+
+  <label style="margin-top:10px;display:block;display:none;" id="maxCsvLineLabel">
+    <span>Fermati alla riga CSV n°:</span>
+    <input type="number" id="maxCsvLine" min="1" style="width:80px;" placeholder="(tutte)">
+  </label>
+
   <button onclick="start()" disabled id="processButton" style="margin-top:20px;">Processa</button>
   <button onclick="stop()" disabled id="stopButton" style="margin-top:20px;">Ferma</button>
   <progress id="progressBar" value="0" max="100"></progress>
   <div id="loader" style="margin-top:10px; color: #888; display:none;">Conteggio cartelle in corso...</div>
   <div id="progressText" style="margin-top:10px; font-family:monospace;"></div>
-
+  <div id="csvProgressText" style="margin-top:10px; font-family:monospace; color: #007;">
+  </div>
 <script>
   let selectedFolder = null;
+  let selectedOutput = null;
   let processing = false;
 
   async function select() {
@@ -23,6 +37,18 @@
       selectedFolder = folder;
       document.getElementById('selectedFolder').textContent = `Cartella selezionata: ${folder}`;
       document.getElementById('processButton').disabled = false;
+      // --- CSV detection ---
+      // Chiedi al backend se c'è un csv nella cartella selezionata
+      const hasCsv = await window.electronAPI.hasCsvInFolder(folder);
+      document.getElementById('maxCsvLineLabel').style.display = hasCsv ? 'block' : 'none';
+    }
+  }
+
+  async function selectOutput() {
+    const folder = await window.electronAPI.selectOutputFolder();
+    if (folder) {
+      selectedOutput = folder;
+      document.getElementById('selectedOutput').textContent = `Output: ${folder}`;
     }
   }
 
@@ -34,7 +60,9 @@
       document.getElementById('loader').style.display = 'block';
       document.getElementById('stopButton').disabled = false;
       document.getElementById('processButton').disabled = true;
-      await window.electronAPI.processImages(selectedFolder);
+      const testOnly = document.getElementById('testOnlyCheckbox').checked;
+      const maxCsvLine = parseInt(document.getElementById('maxCsvLine').value) || null;
+      await window.electronAPI.processImages(selectedFolder, testOnly, selectedOutput, maxCsvLine);
       document.getElementById('loader').style.display = 'none';
       document.getElementById('stopButton').disabled = true;
       document.getElementById('processButton').disabled = false;
@@ -66,6 +94,15 @@
       text += `File ${current} di ${total}: ${currentFile}`;
     }
     document.getElementById('progressText').textContent = text;
+  });
+
+  window.electronAPI.onCsvProgress((progress) => {
+    const { current, total, codice, src, dest } = progress;
+    let text = `Organizzazione CSV: ${current} di ${total}`;
+    if (codice) {
+      text += `\nUltimo: ${codice}`;
+    }
+    document.getElementById('csvProgressText').textContent = text;
   });
 
 </script>
