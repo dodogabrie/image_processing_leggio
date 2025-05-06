@@ -218,9 +218,9 @@ async function processDir(
         await cropPageWithSpawn(output, croppedPath);
       }
     }
-    //else {
-    //  await processInBatches(tasks, MAX_PARALLEL);
-    //}
+    else {
+     await processInBatches(tasks, MAX_PARALLEL);
+    }
   }
 
   for (const file of xmls) {

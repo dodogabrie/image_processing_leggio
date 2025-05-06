@@ -103,16 +103,18 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
         });
         webContents.send('zip:done', outputZip);
       } catch (err) {
+        // Propaga l'errore verso l'alto per mostrarlo nell'alert
         console.error('Errore creazione zip finale:', err.message);
         webContents.send('zip:error', err.message);
+        throw new Error('Errore creazione zip finale: ' + err.message);
       }
       // --- END ZIP WORKER CALL ---
     }
 
-    return true;
+    return { success: true };
   } catch (err) {
     console.error('Errore durante l\'elaborazione delle immagini:', err);
-    return false;
+    return { success: false, error: err && err.message ? err.message : String(err) };
   }
 });
 

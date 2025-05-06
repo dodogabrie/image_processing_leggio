@@ -62,12 +62,26 @@
       document.getElementById('processButton').disabled = true;
       const testOnly = document.getElementById('testOnlyCheckbox').checked;
       const maxCsvLine = parseInt(document.getElementById('maxCsvLine').value) || null;
-      await window.electronAPI.processImages(selectedFolder, testOnly, selectedOutput, maxCsvLine);
-      document.getElementById('loader').style.display = 'none';
-      document.getElementById('stopButton').disabled = true;
-      document.getElementById('processButton').disabled = false;
-      processing = false;
-      alert('Finito!');
+      try {
+        const result = await window.electronAPI.processImages(selectedFolder, testOnly, selectedOutput, maxCsvLine);
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('stopButton').disabled = true;
+        document.getElementById('processButton').disabled = false;
+        processing = false;
+        if (result && result.success) {
+          alert('Finito!');
+        } else if (result && result.error) {
+          alert('Errore: ' + result.error);
+        } else {
+          alert('Errore sconosciuto durante il processo.');
+        }
+      } catch (err) {
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('stopButton').disabled = true;
+        document.getElementById('processButton').disabled = false;
+        processing = false;
+        alert('Errore JS: ' + (err && err.message ? err.message : err));
+      }
     }
   }
 
