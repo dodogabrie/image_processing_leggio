@@ -27,7 +27,7 @@
         "AppImage",
         "deb"
       ],
-      "maintainer": "Edoardo <tuamail@example.com>",
+      "maintainer": "Edoardo <edoardo.gabrielli@grupposcai.it>",
       "category": "Utility"
     },
     "win": {
