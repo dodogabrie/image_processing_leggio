@@ -67,7 +67,9 @@
       const testOnly = document.getElementById('testOnlyCheckbox').checked;
       const maxCsvLine = parseInt(document.getElementById('maxCsvLine').value) || null;
       try {
+        document.getElementById('progressText').textContent = 'Inizio elaborazione...';
         const result = await window.electronAPI.processImages(selectedFolder, testOnly, selectedOutput, maxCsvLine);
+        document.getElementById('progressText').textContent = 'Elaborazione completata.';
         document.getElementById('loader').style.display = 'none';
         document.getElementById('stopButton').disabled = true;
         document.getElementById('processButton').disabled = false;
