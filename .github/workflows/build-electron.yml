@@ -19,31 +19,14 @@ jobs:
         with:
           node-version: 20
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Create venv and install requirements
-        run: |
-          python -m venv venv
-          ./venv/Scripts/pip install -r requirements.txt
-
-      - name: Install dependencies (Windows only)
+      - name: Install dependencies
         run: npm install
 
       - name: Build Electron app
         run: npm run build
-
-      - name: Copy venv to dist
-        run: |
-          mkdir -p dist/venv
-          cp -r venv/* dist/venv/
-        shell: bash
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-windows-latest
           path: dist/
-
