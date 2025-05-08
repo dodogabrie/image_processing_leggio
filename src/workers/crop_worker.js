@@ -10,7 +10,9 @@ function cropWorker(input, output) {
   const pythonPath = process.platform === 'win32'
     ? path.join(venvPath, 'Scripts', 'python.exe')
     : path.join(venvPath, 'bin', 'python3');
-  const scriptPath = path.join(__dirname, '..', 'scripts', 'crop.py');
+  const scriptPath = process.env.NODE_ENV === 'development'
+    ? path.join(__dirname, '..', 'scripts', 'crop.py')
+    : path.join(process.resourcesPath, 'src', 'scripts', 'crop.py');
 
   // Save log in the same directory as the output file
   const logPath = path.join(path.dirname(output), 'crop_worker.log');
