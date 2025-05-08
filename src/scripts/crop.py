@@ -1,63 +1,105 @@
-import sys
-import cv2
-from PIL import Image
-import numpy as np
+import matplotlib.pyplot as plt
+import cv2, numpy as np, argparse, os
+from scipy.optimize import curve_fit
+from scipy.signal import argrelextrema
 
-def load_image(input_path):
-    pil_image = Image.open(input_path).convert('RGB')
-    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+def parabola(x, a, b, c): return a*x**2 + b*x + c
 
-def find_largest_contour(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blurred, 50, 150)
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return None, 0
-    largest = max(contours, key=cv2.contourArea)
-    area = cv2.contourArea(largest)
-    return largest, area
+def detect_fold_hough(img, side, debug=False, debug_dir=None):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5,5), 0)
 
-def crop_and_warp(image, contour):
-    rect = cv2.minAreaRect(contour)
-    box = cv2.boxPoints(rect)
-    box = box.astype("float32")
-    W, H = cv2.boundingRect(box)[2:]
-    dst_pts = cv2.boxPoints(((W/2, H/2), (W, H), 0))
-    M = cv2.getPerspectiveTransform(box, dst_pts)
-    warped = cv2.warpPerspective(image, M, (W, H))
-    return warped
+    h, w = blur.shape
+    if side=='right':
+        x0, x1 = int(0.8*w), w
+    else:
+        x0, x1 = 0, int(0.2*w)
+    roi = blur[:, x0:x1]
 
-def crop_image(input_path, output_path, min_area=200000):
-    try:
-        image = load_image(input_path)
-    except Exception as e:
-        return False, f"Failed to load image: {e}"
+    if debug and debug_dir:
+        os.makedirs(debug_dir, exist_ok=True)
+        rows = np.linspace(0, h-1, num=40, dtype=int)
+        x_axis = np.arange(x0, x1)
+        tmp = [(r, roi[r, :], roi[r, :].mean()) for r in rows]
+        avg_ints = np.array([t[2] for t in tmp])
+        mean_int = avg_ints.mean()
+        std_int  = avg_ints.std()
+        filtered = [prof for (_, prof, avg) in tmp if abs(avg - mean_int) <= 1.5 * std_int]
+        if not filtered: filtered = [prof for (_, prof, _) in tmp]
 
-    contour, area = find_largest_contour(image)
-    if contour is None:
-        return False, "No contours found"
+        fig, (ax1, ax2) = plt.subplots(2, 1, gridspec_kw={'height_ratios': [2, 1]}, figsize=(8, 6))
+        for prof in filtered:
+            ax1.plot(x_axis, prof, color='gray', linewidth=0.5, alpha=0.3)
+        arr = np.array(filtered)
+        mean_profile = arr.mean(axis=0)
+        std_profile  = arr.std(axis=0)
+        ax1.errorbar(x_axis, mean_profile, yerr=std_profile, color='red', ecolor='salmon',
+                     linewidth=2, elinewidth=1, capsize=2, label='mean ± std')
+        ax1.set_title('Brightness profiles (filtered)')
+        ax1.set_ylabel('Gray value')
+        ax1.grid(True)
+        ax1.legend(fontsize='xx-small', loc='upper right', framealpha=0.6)
+        ax2.imshow(roi, cmap='gray', aspect='auto')
+        ax2.set_title('ROI preview')
+        ax2.axis('off')
+        plt.tight_layout()
+        plt.savefig(os.path.join(debug_dir, 'step_profiles.png'))
+        plt.close(fig)
 
-    warped = crop_and_warp(image, contour)
-    cv2.imwrite(output_path, warped)
+        # fit parabolico
+        smooth = cv2.GaussianBlur(mean_profile + std_profile, (11, 1), 0).flatten()
+        x_min = np.argmin(smooth)
+        x_fit = np.arange(max(0, x_min-15), min(len(smooth), x_min+16))
+        y_fit = smooth[x_fit]
+        popt, _ = curve_fit(parabola, x_fit, y_fit)
+        x_refined = -popt[1] / (2 * popt[0])
 
-    if area < min_area:
-        return False, f"Contour too small ({area} < {min_area})"
-    return True, None
+        # salva debug fit
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(x_axis, mean_profile, label='Mean profile', alpha=0.5)
+        ax.plot(x_axis, smooth, label='Smoothed', color='orange')
+        ax.axvline(x0 + x_min, color='gray', linestyle='--', label='Min raw')
+        ax.axvline(x0 + x_refined, color='red', linestyle='--', label='Min refined')
+        ax.plot(x0 + x_fit, parabola(x_fit, *popt), 'r:', label='Parabolic fit')
+        ax.set_title('Profile + Fit')
+        ax.legend()
+        ax.grid(True)
+        plt.tight_layout()
+        plt.savefig(os.path.join(debug_dir, 'step_min_fit.png'))
+        plt.close(fig)
+    else:
+        mean_profile = roi.mean(axis=0)
+        smooth = cv2.GaussianBlur(mean_profile, (11, 1), 0).flatten()
+        x_min = np.argmin(smooth)
+        x_fit = np.arange(max(0, x_min-15), min(len(smooth), x_min+16))
+        y_fit = smooth[x_fit]
+        popt, _ = curve_fit(parabola, x_fit, y_fit)
+        x_refined = -popt[1] / (2 * popt[0])
 
-def main_worker():
-    if len(sys.argv) < 3:
-        print("Usage: python crop.py input output [min_area]", file=sys.stderr)
-        sys.exit(1)
+    return int(round(x0 + x_refined))
 
-    input_path, output_path = sys.argv[1:3]
-    min_area = int(sys.argv[3]) if len(sys.argv) > 3 else 200000
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("input")
+    p.add_argument("--side", choices=('left','right'), default='right')
+    p.add_argument("out", nargs='?')
+    p.add_argument("--debug", action='store_true')
+    args = p.parse_args()
 
-    ok, msg = crop_image(input_path, output_path, min_area)
-    if not ok:
-        print(msg, file=sys.stderr)
-        sys.exit(2)
-    sys.exit(0)
+    img = cv2.imread(args.input)
+    debug_dir = None
+    if args.debug and args.out:
+        base, _ = os.path.splitext(args.out)
+        debug_dir = base + "_debug"
 
-if __name__ == "__main__":
-    main_worker()
+    x = detect_fold_hough(img, args.side, debug=args.debug, debug_dir=debug_dir)
+    print(x if x else -1)
+
+    if args.out:
+        vis = img.copy()
+        if x:
+            cv2.line(vis, (x,0), (x,img.shape[0]), (0,0,255), 2)
+        cv2.imwrite(args.out, vis)
+
+if __name__=="__main__":
+    main()

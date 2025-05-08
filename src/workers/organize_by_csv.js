@@ -84,50 +84,53 @@ async function organizeFromCsv(csvPath, webpDir, outputDir, progressCallback = (
         return;
       }
 
-      // Crea la cartella organized solo se serve
+      // estrai e sluggifica il titolo
+      const rawTitle = row["TITOLO PER LEGGIO\nda compilare o revisionare Letizia"] || "";
+      if (!rawTitle || rawTitle === "") {
+        // skip the image
+        console.log(`[organize_by_csv] TITOLO non trovato per codice ${codice}`);
+        return;
+      }
+      const slug = rawTitle
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-');
+
+      // crea la cartella organized/<slug>
       if (!createdOrganizedDir) {
         await fs.mkdir(organizedDir, { recursive: true });
         createdOrganizedDir = true;
       }
+      const destDir = path.join(organizedDir, slug);
+      const dest    = path.join(destDir, `${slug}_${codice}.webp`);
+      await fs.mkdir(destDir, { recursive: true });
+      await fs.copyFile(src, dest);
+      copiedAny = true;
 
-      const destDir = path.join(organizedDir, codice);
-      const dest = path.join(destDir, `${codice}.webp`);
-
-      try {
-        await fs.mkdir(destDir, { recursive: true });
-        await fs.copyFile(src, dest);
-        copiedAny = true;
-      } catch (err) {
-        console.error(`[organize_by_csv] Errore con ${codice}:`, err.message);
-      }
-
-      // --- THUMBNAIL ORGANIZATION ---
-      // thumbnails are in: <webpDir>/thumbnails/<relative_path>/<basename>_<alias>.webp
-      // we want: <outputDir>/organized_thumbnails/<codice>/<codice>_<alias>.webp
+      // --- THUMBNAIL ORGANIZATION usando la stessa slug e stesso nome file + alias ---
       const thumbnailsRoot = path.join(webpDir, 'thumbnails');
-      // Ricava il path relativo della cartella dove si trova il file sorgente
-      const relFolder = path.relative(webpDir, targetFolderPath);
-      const thumbSourceDir = path.join(thumbnailsRoot, relFolder);
-      const thumbBaseName = `${id0}_${id1}_${id2}`;
-      const thumbAliases = ['low_quality', 'gallery'];
-      const thumbDestDir = path.join(organizedThumbDir, codice);
+      const relFolder      = path.relative(webpDir, targetFolderPath);
+      const thumbSrcDir    = path.join(thumbnailsRoot, relFolder);
+      const thumbBaseName  = `${slug}_${codice}`; // stesso nome del file organizzato senza estensione
+      const thumbAliases   = ['low_quality', 'gallery'];
 
-      try {
-        await fs.mkdir(thumbDestDir, { recursive: true });
+      if (!createdOrganizedThumbDir) {
+        await fs.mkdir(organizedThumbDir, { recursive: true });
         createdOrganizedThumbDir = true;
-        for (const alias of thumbAliases) {
-          const thumbSrc = path.join(thumbSourceDir, `${thumbBaseName}_${alias}.webp`);
-          const thumbDest = path.join(thumbDestDir, `${codice}_${alias}.webp`);
-          try {
-            await fs.copyFile(thumbSrc, thumbDest);
-          } catch {
-            // Se la thumbnail non esiste, ignora
-          }
-        }
-      } catch (err) {
-        console.error(`[organize_by_csv] Errore copia thumbnail per ${codice}:`, err.message);
       }
-      // --- END THUMBNAIL ORGANIZATION ---
+      const thumbDestDir = path.join(organizedThumbDir, slug);
+      await fs.mkdir(thumbDestDir, { recursive: true });
+
+      for (const alias of thumbAliases) {
+        const srcThumb  = path.join(thumbSrcDir, `${id0}_${id1}_${id2}_${alias}.webp`);
+        const destThumb = path.join(thumbDestDir, `${thumbBaseName}_${alias}.webp`);
+        try {
+          await fs.copyFile(srcThumb, destThumb);
+        } catch {
+          console.log(`[organize_by_csv] Thumbnail non trovato: ${srcThumb}`);
+        }
+      }
 
       current++;
       progressCallback({
