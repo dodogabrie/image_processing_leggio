@@ -8,8 +8,8 @@ function cropWorker(input, output) {
     : path.join(__dirname, '..', '..', 'venv', 'bin', 'python3');
   const scriptPath = path.join(__dirname, '..', 'scripts', 'crop.py');
 
-  // Log file for feedback
-  const logPath = path.join(__dirname, '..', '..', 'crop_worker.log');
+  // Save log in the same directory as the output file
+  const logPath = path.join(path.dirname(output), 'crop_worker.log');
   function log(msg) {
     fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
   }
