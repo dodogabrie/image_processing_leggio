@@ -2,10 +2,14 @@ const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
 
+const venvPath = process.env.NODE_ENV === 'development'
+  ? path.join(__dirname, '..', '..', 'venv')
+  : path.join(process.resourcesPath, 'venv');
+
 function cropWorker(input, output) {
   const pythonPath = process.platform === 'win32'
-    ? path.join(__dirname, '..', '..', 'venv', 'Scripts', 'python.exe')
-    : path.join(__dirname, '..', '..', 'venv', 'bin', 'python3');
+    ? path.join(venvPath, 'Scripts', 'python.exe')
+    : path.join(venvPath, 'bin', 'python3');
   const scriptPath = path.join(__dirname, '..', 'scripts', 'crop.py');
 
   // Save log in the same directory as the output file

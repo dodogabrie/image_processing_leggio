@@ -21,7 +21,10 @@
     },
     "files": [
       "**/*",
-      "dist/venv/**/*"
+      "venv/**/*"
+    ],
+    "asarUnpack": [
+      "venv/**"
     ],
     "linux": {
       "target": [
