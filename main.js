@@ -6,6 +6,8 @@ const fs = require('fs').promises;
 const { processDir } = require('./src/image_processor');
 const { organizeFromCsv } = require('./src/workers/organize_by_csv');
 
+const { setupPythonEnv } = require('./src/scripts/setup-python');
+
 const path = require('path');
 
 function createWindow() {
@@ -142,7 +144,17 @@ ipcMain.on('process:stop', () => {
   shouldStop = true;
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  try {
+    setupPythonEnv(); // solo in produzione e solo se non esiste
+    createWindow();
+  } catch (err) {
+    console.error('Errore setupPythonEnv:', err);
+    dialog.showErrorBox('Errore ambiente Python', `Impossibile creare l'ambiente Python:\n\n${err.message}`);
+    app.quit();
+  }
+});
+
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
