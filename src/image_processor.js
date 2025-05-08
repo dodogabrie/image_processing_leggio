@@ -6,6 +6,7 @@ const {
   convertWorker,
   createThumbnailWorker
 } = require('./worker_forks');
+const { cropWorker } = require('./workers/crop_worker'); // aggiungi questa riga
 const { getAllFolders } = require('./scripts/utils');
 
 module.exports = { processDir };
@@ -47,7 +48,7 @@ async function processDir(
   shouldStopFn = () => false,
   errorFiles = null,
   isRoot = true,
-  testOnly = false
+  crop = true // crop parameter now controlled from frontend
 ) {
   if (shouldStopFn()) return;
 
@@ -90,7 +91,7 @@ async function processDir(
       shouldStopFn,
       errorFiles,
       false,
-      testOnly
+      crop
     );
   }
 
@@ -109,6 +110,14 @@ async function processDir(
       if (!skip) {
         try {
           await convertWorker(src, dest);
+          if (crop) {
+            const thumbsBaseCrop = path.join(baseOutput, 'thumbnails', relativePath);
+            const cropDest = path.join(
+              thumbsBaseCrop,
+              path.basename(dest, '.webp') + `_book.webp`
+            );
+            await cropWorker(dest, cropDest);
+          }
         } catch (e) {
           errorFiles.push(`${src} - ${e.message}`);
           return;
@@ -143,18 +152,7 @@ async function processDir(
       });
     });
 
-    if (testOnly) {
-      for (const file of images.slice(0, 5)) {
-        const src = path.join(dir, file);
-        const dest = path.join(outDir, file.replace(/\.\w+$/, '.webp'));
-        await convertWorker(src, dest);
-        const cropDest = dest.replace('.webp', '_crop.webp');
-        await cropPageWorker(dest, cropDest, 200000);
-      }
-    }
-    // else {
-      // await processInBatches(tasks, MAX_PARALLEL);
-    // }
+    await processInBatches(tasks, MAX_PARALLEL);
   }
 
   // Copia XML

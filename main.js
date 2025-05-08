@@ -41,7 +41,7 @@ ipcMain.handle('hasCsvInFolder', async (event, dir) => {
 
 let shouldStop = false;
 
-ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir = null, maxCsvLine = null) => {
+ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine = null, crop = true) => {
   const webContents = event.sender;
   shouldStop = false;
   try {
@@ -61,7 +61,7 @@ ipcMain.handle('process:images', async (event, dir, testOnly = false, outputDir 
       () => shouldStop,
       undefined,
       true,
-      testOnly
+      crop // pass crop parameter
     );
 
     // --- STOP CHECK dopo immagini ---

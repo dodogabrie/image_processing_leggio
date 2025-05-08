@@ -3,7 +3,7 @@ const { ipcRenderer, contextBridge } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   selectOutputFolder: () => ipcRenderer.invoke('dialog:openOutputFolder'),
-  processImages: (dir, testOnly = false, outputDir = null, maxCsvLine = null) => ipcRenderer.invoke('process:images', dir, testOnly, outputDir, maxCsvLine),
+  processImages: (dir, outputDir = null, maxCsvLine = null, crop = true) => ipcRenderer.invoke('process:images', dir, outputDir, maxCsvLine, crop),
   stopProcessing: () => ipcRenderer.send('process:stop'),
   onProgressUpdate: (callback) => ipcRenderer.on('progress:update', (event, progress) => callback(progress)),
   onCsvProgress: (callback) => ipcRenderer.on('csv:progress', (event, progress) => callback(progress)),

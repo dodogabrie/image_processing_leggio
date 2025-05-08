@@ -17,10 +17,16 @@ const [input, output] = process.argv.slice(2);
 
     // nuova formula: più aggressiva per input > 1MB
     let quality = Math.round(90 - originalKB / 25);
-    quality = Math.max(20, Math.min(quality, 90));
+    quality = Math.max(10, Math.min(quality, 90));
 
     const info = await sharp(input)
-      .webp({ quality })
+      .webp({
+        quality,
+        effort: 6,           // massimo sforzo di compressione (più lento, più piccolo)
+        smartSubsample: true,
+        preset: 'photo',     // ottimizzato per fotografie
+        nearLossless: false  // disabilita near-lossless per massima compressione
+      })
       .toFile(output);
 
     console.log(

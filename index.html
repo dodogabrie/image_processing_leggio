@@ -11,7 +11,7 @@
   <div id="selectedOutput" style="margin-top:10px; font-style:italic;"></div>
 
   <label style="margin-top:10px;display:block;">
-    <input type="checkbox" id="testOnlyCheckbox"> Test solo una immagine per cartella
+    <input type="checkbox" id="cropCheckbox"> Abilita crop immagini
   </label>
 
   <label style="margin-top:10px;display:block;display:none;" id="maxCsvLineLabel">
@@ -60,11 +60,11 @@
       document.getElementById('loader').style.display = 'block';
       document.getElementById('stopButton').disabled = false;
       document.getElementById('processButton').disabled = true;
-      const testOnly = document.getElementById('testOnlyCheckbox').checked;
+      const crop = document.getElementById('cropCheckbox').checked; // Fixed the method call
       const maxCsvLine = parseInt(document.getElementById('maxCsvLine').value) || null;
       try {
         document.getElementById('progressText').textContent = 'Inizio elaborazione...';
-        const result = await window.electronAPI.processImages(selectedFolder, testOnly, selectedOutput, maxCsvLine);
+        const result = await window.electronAPI.processImages(selectedFolder, selectedOutput, maxCsvLine, crop); // Updated method call
         document.getElementById('progressText').textContent = 'Elaborazione completata.';
         document.getElementById('loader').style.display = 'none';
         document.getElementById('stopButton').disabled = true;
