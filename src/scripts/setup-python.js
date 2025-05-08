@@ -20,8 +20,8 @@ function setupPythonEnv() {
   const pip = process.platform === 'win32'
     ? path.join(venvPath, 'Scripts', 'pip.exe')
     : path.join(venvPath, 'bin', 'pip');
-
-  execSync(`${pip} install -r requirements.txt`, { cwd: process.resourcesPath, stdio: 'inherit' });
+  const requirementsPath = path.join(process.resourcesPath, 'requirements.txt');
+  execSync(`${pip} install -r "${requirementsPath}"`, { stdio: 'inherit' });
 }
 
 module.exports = { setupPythonEnv };
