@@ -35,6 +35,12 @@ jobs:
       - name: Build Electron app
         run: npm run build
 
+      - name: Copy venv to dist
+        run: |
+          mkdir -p dist/venv
+          cp -r venv/* dist/venv/
+        shell: bash
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

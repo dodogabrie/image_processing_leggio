@@ -20,7 +20,8 @@
       "output": "dist"
     },
     "files": [
-      "**/*"
+      "**/*",
+      "dist/venv/**/*"
     ],
     "linux": {
       "target": [
