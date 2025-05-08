@@ -24,7 +24,8 @@
       "venv/**/*"
     ],
     "asarUnpack": [
-      "**/*.py"
+      "**/*.py",
+      "requirements.txt"
     ],
     "linux": {
       "target": [
