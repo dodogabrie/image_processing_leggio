@@ -36,10 +36,13 @@ async function main() {
 
     // Crea lo zip
     await new Promise((resolve, reject) => {
-      const output = fsSync.createWriteStream(outputZip);
+      const output = fsSync.createWriteStream(outputZip, { flags: 'w' });
       const archive = archiver('zip', { zlib: { level: 9 } });
+
       output.on('close', resolve);
+      output.on('error', reject); // aggiungi gestione errori sullo stream di output
       archive.on('error', reject);
+
       archive.pipe(output);
       archive.directory(tmp, false);
       archive.finalize();
