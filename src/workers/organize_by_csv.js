@@ -92,11 +92,14 @@ async function organizeFromCsv(csvPath, webpDir, outputDir, progressCallback = (
         console.log(`[organize_by_csv] TITOLO non trovato per codice ${codice}`);
         return;
       }
+      // Sanitize slug for Windows compatibility
       const slug = rawTitle
         .toLowerCase()
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '') // rimuovi caratteri vietati da Windows
         .replace(/[^\w\s-]/g, '')
         .trim()
-        .replace(/\s+/g, '-');
+        .replace(/\s+/g, '-')
+        .slice(0, 100); // limita la lunghezza
 
       // crea la cartella organized/<slug>
       if (!createdOrganizedDir) {
