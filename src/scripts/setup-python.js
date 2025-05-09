@@ -2,26 +2,30 @@ const { execSync } = require('child_process');
 const { existsSync } = require('fs');
 const path = require('path');
 
-const projectRoot = path.join(__dirname, '..');
 const venvPath = path.join(process.resourcesPath, 'venv');
 
 function setupPythonEnv() {
   // Solo in produzione
   if (process.env.NODE_ENV === 'development') return;
 
-  const pipPath = path.join(venvPath, process.platform === 'win32' ? 'Scripts' : 'bin');
+  const pipDir = process.platform === 'win32' ? 'Scripts' : 'bin';
+  const pipPath = path.join(venvPath, pipDir, process.platform === 'win32' ? 'pip.exe' : 'pip');
 
-  if (existsSync(pipPath)) return; // già presente
+  if (existsSync(pipPath)) return;
 
-  // Crea venv
   console.log('Creating virtualenv...');
-  execSync('python3 -m venv venv', { cwd: process.resourcesPath, stdio: 'inherit' });
+  execSync(`${process.platform === 'win32' ? 'python' : 'python3'} -m venv venv`, {
+    cwd: process.resourcesPath,
+    stdio: 'inherit'
+  });
 
-  const pip = process.platform === 'win32'
-    ? path.join(venvPath, 'Scripts', 'pip.exe')
-    : path.join(venvPath, 'bin', 'pip');
-  const requirementsPath = path.join(process.resourcesPath, 'requirements.txt');
-  execSync(`${pip} install -r "${requirementsPath}"`, { stdio: 'inherit' });
+  // Usa la copia unpacked di requirements.txt
+  const requirementsPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'requirements.txt');
+
+  console.log('Installing Python dependencies...');
+  execSync(`"${pipPath}" install -r "${requirementsPath}"`, {
+    stdio: 'inherit'
+  });
 }
 
 module.exports = { setupPythonEnv };

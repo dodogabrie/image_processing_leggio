@@ -12,11 +12,13 @@ function cropWorker(input, output) {
     : path.join(venvPath, 'bin', 'python3');
   const scriptPath = process.env.NODE_ENV === 'development'
     ? path.join(__dirname, '..', 'scripts', 'crop.py')
-    : path.join(process.resourcesPath, 'src', 'scripts', 'crop.py');
+    : path.join(process.resourcesPath, 'app.asar.unpacked', 'src', 'scripts', 'crop.py');
 
   // Save log in the same directory as the output file
   const logPath = path.join(path.dirname(output), 'crop_worker.log');
+
   function log(msg) {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
     fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
   }
 

@@ -20,11 +20,13 @@
       "output": "dist"
     },
     "files": [
-      "**/*",
-      "venv/**/*"
+      "main.js",
+      "src/**/*",
+      "package.json",
+      "requirements.txt"
     ],
     "asarUnpack": [
-      "**/*.py",
+      "src/scripts/crop.py",
       "requirements.txt"
     ],
     "linux": {

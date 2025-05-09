@@ -116,6 +116,7 @@ async function processDir(
               thumbsBaseCrop,
               path.basename(dest, '.webp') + `_book.webp`
             );
+            await fs.mkdir(path.dirname(cropDest), { recursive: true });
             await cropWorker(dest, cropDest);
           }
         } catch (e) {
