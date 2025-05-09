@@ -14,6 +14,7 @@ function cropWorker(input, output) {
     ? path.join(__dirname, '..', 'scripts', 'crop.py')
     : path.join(process.resourcesPath, 'app.asar.unpacked', 'src', 'scripts', 'crop.py');
 
+
   // Save log in the same directory as the output file
   const logPath = path.join(path.dirname(output), 'crop_worker.log');
 
