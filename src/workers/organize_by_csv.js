@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse/sync');
 
@@ -105,7 +106,16 @@ async function organizeFromCsv(csvPath, webpDir, outputDir, progressCallback = (
       const destDir = path.join(organizedDir, slug);
       const dest    = path.join(destDir, `${slug}_${codice}.webp`);
       await fs.mkdir(destDir, { recursive: true });
-      await fs.copyFile(src, dest);
+      try {
+        await fs.copyFile(src, dest);
+        await fs.access(dest);
+        if (!fsSync.existsSync(dest)) {
+          console.error(`[organize_by_csv] ERRORE: file non trovato dopo copia: ${dest}`);
+        }
+      } catch (err) {
+        console.error(`[organize_by_csv] Errore su file ${src} -> ${dest}: ${err.message}`);
+        throw err;
+      }
       copiedAny = true;
 
       // --- THUMBNAIL ORGANIZATION usando la stessa slug e stesso nome file + alias ---
@@ -127,7 +137,11 @@ async function organizeFromCsv(csvPath, webpDir, outputDir, progressCallback = (
         const destThumb = path.join(thumbDestDir, `${thumbBaseName}_${alias}.webp`);
         try {
           await fs.copyFile(srcThumb, destThumb);
-        } catch {
+          await fs.access(destThumb);
+          if (!fsSync.existsSync(destThumb)) {
+            console.error(`[organize_by_csv] ERRORE: thumbnail non trovata dopo copia: ${destThumb}`);
+          }
+        } catch (err) {
           console.log(`[organize_by_csv] Thumbnail non trovato: ${srcThumb}`);
         }
       }
@@ -158,6 +172,10 @@ async function organizeFromCsv(csvPath, webpDir, outputDir, progressCallback = (
     const destCsv = path.join(organizedDir, path.basename(csvPath));
     try {
       await fs.copyFile(csvPath, destCsv);
+      await fs.access(destCsv);
+      if (!fsSync.existsSync(destCsv)) {
+        console.error(`[organize_by_csv] ERRORE: CSV non trovato dopo copia: ${destCsv}`);
+      }
       console.log(`[organize_by_csv] Copiato anche il CSV in: ${destCsv}`);
     } catch (err) {
       console.error(`[organize_by_csv] Errore copia CSV:`, err.message);
@@ -168,6 +186,10 @@ async function organizeFromCsv(csvPath, webpDir, outputDir, progressCallback = (
     const destCsv = path.join(organizedThumbDir, path.basename(csvPath));
     try {
       await fs.copyFile(csvPath, destCsv);
+      await fs.access(destCsv);
+      if (!fsSync.existsSync(destCsv)) {
+        console.error(`[organize_by_csv] ERRORE: CSV organized_thumbnails non trovato dopo copia: ${destCsv}`);
+      }
       console.log(`[organize_by_csv] Copiato anche il CSV in: ${destCsv}`);
     } catch (err) {
       console.error(`[organize_by_csv] Errore copia CSV organized_thumbnails:`, err.message);

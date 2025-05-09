@@ -126,7 +126,7 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
             {
               execPath: process.env.NODE_ENV === 'development' ? 'node' : process.execPath,
               stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-              windowsHide: true
+              // windowsHide: true
             }
           );
           child.on('exit', code => {
