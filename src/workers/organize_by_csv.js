@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse/sync');
+const slugify = require('slugify');
 
 async function findSubfolderRecursive(rootDir, prefix) {
   const entries = await fs.readdir(rootDir, { withFileTypes: true });
@@ -93,13 +94,7 @@ async function organizeFromCsv(csvPath, webpDir, outputDir, progressCallback = (
         return;
       }
       // Sanitize slug for Windows compatibility
-      const slug = rawTitle
-        .toLowerCase()
-        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '') // rimuovi caratteri vietati da Windows
-        .replace(/[^\w\s-]/g, '')
-        .trim()
-        .replace(/\s+/g, '-')
-        .slice(0, 100); // limita la lunghezza
+      const slug = slugify(rawTitle, { lower: true, strict: true, locale: 'it' });
 
       // crea la cartella organized/<slug>
       if (!createdOrganizedDir) {
