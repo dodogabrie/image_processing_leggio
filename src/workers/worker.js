@@ -15,9 +15,8 @@ const [input, output] = process.argv.slice(2);
     const { size } = await stat(input); // in byte
     const originalKB = size / 1024;
 
-    // nuova formula: più aggressiva per input > 1MB
-    let quality = Math.round(90 - originalKB / 25);
-    quality = Math.max(10, Math.min(quality, 90));
+    let quality = Math.round(90 - originalKB / 27.3);
+    quality = Math.max(15, Math.min(quality, 90));
 
     const info = await sharp(input)
       .webp({

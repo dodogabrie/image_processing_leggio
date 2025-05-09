@@ -11,7 +11,8 @@ const { getAllFolders } = require('./scripts/utils');
 
 module.exports = { processDir };
 
-const MAX_PARALLEL = Math.max(1, Math.floor(os.cpus().length / 2));
+const total = os.cpus().length;
+const MAX_PARALLEL = total > 4 ? total - 1 : Math.max(1, Math.floor(total / 2));
 
 const THUMBNAIL_ALIASES = {
   low_quality: { size: [640, 480], quality: 75, crop: false, format: 'webp' },

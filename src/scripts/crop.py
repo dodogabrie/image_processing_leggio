@@ -157,7 +157,7 @@ def main():
     side = auto_detect_side(img) if args.side is None else args.side
 
     if side not in ('left', 'right'):
-        print("⚠️ Lato non valido, salvo originale")
+        print("Attenzione: Lato della piega non rilevato, salvo originale")
         save_webp(img, args.out, width=1920, height=1080, quality=80)
         return
 

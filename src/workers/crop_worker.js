@@ -57,7 +57,10 @@ function cropWorker(input, output) {
     child.on('exit', (code) => {
       log(`EXIT CODE: ${code}`);
       if (code === 0) resolve();
-      else reject(new Error(`crop.py exited with code ${code}`));
+      else {
+        log(`ERROR: crop.py exited with code ${code}`);
+        resolve(); // or resolve(null), depending on your logic
+      }
     });
   });
 }
