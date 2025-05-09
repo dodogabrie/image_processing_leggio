@@ -47,6 +47,17 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
   const webContents = event.sender;
   shouldStop = false;
   try {
+    // Installa/env Python solo se crop è abilitato
+    if (crop) {
+      try {
+        setupPythonEnv();
+      } catch (err) {
+        console.error('Errore setupPythonEnv:', err);
+        dialog.showErrorBox('Errore ambiente Python', `Impossibile creare l'ambiente Python:\n\n${err.message}`);
+        return { success: false, error: 'Errore ambiente Python: ' + err.message };
+      }
+    }
+
     // Calcola il nome della cartella di input (quella selezionata)
     const inputBaseName = require('path').basename(dir);
     // Se outputDir è fornito, aggiungi inputBaseName come sottocartella
@@ -145,14 +156,7 @@ ipcMain.on('process:stop', () => {
 });
 
 app.whenReady().then(() => {
-  try {
-    setupPythonEnv(); // solo in produzione e solo se non esiste
-    createWindow();
-  } catch (err) {
-    console.error('Errore setupPythonEnv:', err);
-    dialog.showErrorBox('Errore ambiente Python', `Impossibile creare l'ambiente Python:\n\n${err.message}`);
-    app.quit();
-  }
+  createWindow();
 });
 
 
