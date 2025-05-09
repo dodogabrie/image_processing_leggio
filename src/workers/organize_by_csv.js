@@ -94,7 +94,11 @@ async function organizeFromCsv(csvPath, webpDir, outputDir, progressCallback = (
         return;
       }
       // Sanitize slug for Windows compatibility
-      const slug = slugify(rawTitle, { lower: true, strict: true, locale: 'it' });
+      const MAX_SLUG_LEN = 200;
+      let slug = slugify(rawTitle, { lower: true, strict: true, locale: 'it' });
+      if (slug.length > MAX_SLUG_LEN) {
+        slug = slug.slice(0, MAX_SLUG_LEN);
+      }
 
       // crea la cartella organized/<slug>
       if (!createdOrganizedDir) {
