@@ -1,127 +1,52 @@
 <!DOCTYPE html>
 <html>
-<head><title>Leggio Preprocessing Immagini</title></head>
-<body>
-  <h1>Elaborazione immagini per Leggio</h1>
+<head>
+  <title>Leggio Preprocessing Immagini</title>
+  <!-- Bootstrap CSS -->
+  <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <h1 class="mb-4">Elaborazione immagini per Leggio</h1>
 
-  <button onclick="select()">Seleziona cartella</button>
-  <div id="selectedFolder" style="margin-top:10px; font-style:italic;"></div>
+    <div class="mb-3">
+      <button class="btn btn-primary me-2" onclick="select()">Seleziona cartella</button>
+      <span id="selectedFolder" class="fst-italic text-secondary"></span>
+    </div>
 
-  <button onclick="selectOutput()">Seleziona cartella output</button>
-  <div id="selectedOutput" style="margin-top:10px; font-style:italic;"></div>
+    <div class="mb-3">
+      <button class="btn btn-secondary me-2" onclick="selectOutput()">Seleziona cartella output</button>
+      <span id="selectedOutput" class="fst-italic text-secondary"></span>
+    </div>
 
-  <label style="margin-top:10px;display:block;">
-    <input type="checkbox" id="cropCheckbox"> Abilita crop immagini
-  </label>
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="checkbox" id="cropCheckbox">
+      <label class="form-check-label" for="cropCheckbox">Abilita crop immagini</label>
+    </div>
 
-  <label style="margin-top:10px;display:block;display:none;" id="maxCsvLineLabel">
-    <span>Fermati alla riga CSV n°:</span>
-    <input type="number" id="maxCsvLine" min="1" style="width:80px;" placeholder="(tutte)">
-  </label>
+    <div class="mb-3" id="maxCsvLineLabel" style="display:none;">
+      <label class="form-label">
+        Fermati alla riga CSV n°:
+        <input type="number" id="maxCsvLine" min="1" class="form-control d-inline-block" style="width:100px;" placeholder="(tutte)">
+      </label>
+    </div>
 
-  <button onclick="start()" disabled id="processButton" style="margin-top:20px;">Processa</button>
-  <button onclick="stop()" disabled id="stopButton" style="margin-top:20px;">Ferma</button>
-  <progress id="progressBar" value="0" max="100"></progress>
-  <div id="loader" style="margin-top:10px; color: #888; display:none;">Conteggio cartelle in corso...</div>
-  <div id="progressText" style="margin-top:10px; font-family:monospace;"></div>
-  <div id="csvProgressText" style="margin-top:10px; font-family:monospace; color: #007;">
+    <div class="mb-3">
+      <button class="btn btn-success me-2" onclick="start()" disabled id="processButton">Processa</button>
+      <button class="btn btn-danger" onclick="stop()" disabled id="stopButton">Ferma</button>
+    </div>
+
+    <div class="mb-3">
+      <div class="progress" style="height: 24px;">
+        <div id="progressBar" class="progress-bar" role="progressbar" style="width:0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+    </div>
+
+    <div id="loader" class="text-muted mb-2" style="display:none;">Conteggio cartelle in corso...</div>
+    <div id="progressText" class="font-monospace mb-2"></div>
+    <div id="csvProgressText" class="font-monospace text-primary"></div>
   </div>
-<script>
-  let selectedFolder = null;
-  let selectedOutput = null;
-  let processing = false;
 
-  async function select() {
-    const folder = await window.electronAPI.selectFolder();
-    if (folder) {
-      selectedFolder = folder;
-      document.getElementById('selectedFolder').textContent = `Cartella selezionata: ${folder}`;
-      document.getElementById('processButton').disabled = false;
-      // --- CSV detection ---
-      // Chiedi al backend se c'è un csv nella cartella selezionata
-      const hasCsv = await window.electronAPI.hasCsvInFolder(folder);
-      document.getElementById('maxCsvLineLabel').style.display = hasCsv ? 'block' : 'none';
-    }
-  }
-
-  async function selectOutput() {
-    const folder = await window.electronAPI.selectOutputFolder();
-    if (folder) {
-      selectedOutput = folder;
-      document.getElementById('selectedOutput').textContent = `Output: ${folder}`;
-    }
-  }
-
-  async function start() {
-    if (selectedFolder) {
-      processing = true;
-      document.getElementById('progressText').textContent = '';
-      document.getElementById('progressBar').value = 0;
-      document.getElementById('loader').style.display = 'block';
-      document.getElementById('stopButton').disabled = false;
-      document.getElementById('processButton').disabled = true;
-      const crop = document.getElementById('cropCheckbox').checked; // Fixed the method call
-      const maxCsvLine = parseInt(document.getElementById('maxCsvLine').value) || null;
-      try {
-        document.getElementById('progressText').textContent = 'Inizio elaborazione...';
-        const result = await window.electronAPI.processImages(selectedFolder, selectedOutput, maxCsvLine, crop); // Updated method call
-        document.getElementById('progressText').textContent = 'Elaborazione completata.';
-        document.getElementById('loader').style.display = 'none';
-        document.getElementById('stopButton').disabled = true;
-        document.getElementById('processButton').disabled = false;
-        processing = false;
-        if (result && result.success) {
-          alert('Finito!');
-        } else if (result && result.error) {
-          alert('Errore: ' + result.error);
-        } else {
-          alert('Errore sconosciuto durante il processo.');
-        }
-      } catch (err) {
-        document.getElementById('loader').style.display = 'none';
-        document.getElementById('stopButton').disabled = true;
-        document.getElementById('processButton').disabled = false;
-        document.getElementById('progressText').textContent = 'Contattare l\'amministrazione.';
-        processing = false;
-        alert('Errore JS: ' + (err && err.message ? err.message : err));
-      }
-    }
-  }
-
-  function stop() {
-    if (processing) {
-      window.electronAPI.stopProcessing();
-      document.getElementById('stopButton').disabled = true;
-    }
-  }
-
-  window.electronAPI.onProgressUpdate((progress) => {
-    document.getElementById('loader').style.display = 'none';
-    const { current, total, folderIdx, folderTotal, currentFolder, currentFile } = progress;
-    let percent = 0;
-    if (typeof current === 'number' && typeof total === 'number' && total > 0) {
-      percent = Math.floor((current / total) * 100);
-      document.getElementById('progressBar').value = percent;
-    }
-    let text = '';
-    if (folderIdx && folderTotal && currentFolder) {
-      text += `Cartella ${folderIdx} di ${folderTotal}: ${currentFolder}\n`;
-    }
-    if (typeof current === 'number' && typeof total === 'number' && currentFile) {
-      text += `File ${current} di ${total}: ${currentFile}`;
-    }
-    document.getElementById('progressText').textContent = text;
-  });
-
-  window.electronAPI.onCsvProgress((progress) => {
-    const { current, total, codice, src, dest } = progress;
-    let text = `Organizzazione CSV: ${current} di ${total}`;
-    if (codice) {
-      text += `\nUltimo: ${codice}`;
-    }
-    document.getElementById('csvProgressText').textContent = text;
-  });
-
-</script>
+  <script src="src/renderer.js"></script>
 </body>
 </html>

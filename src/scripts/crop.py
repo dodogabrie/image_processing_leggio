@@ -1,12 +1,33 @@
+"""
+crop.py
+
+Script per il rilevamento automatico della piega di un libro in una scansione,
+crop e rotazione dell'immagine, e salvataggio in formato JPG.
+
+Funzionalità principali:
+- Rilevamento automatico del lato della piega (sinistra/destra)
+- Stima dell'angolo della piega tramite fit parabolico e regressione lineare
+- Crop e rotazione per portare la piega al bordo dell'immagine
+- Salvataggio dell'immagine croppata e ridimensionata
+- Opzionale: generazione di immagini di debug per analisi visiva
+
+Utilizzo:
+    python crop.py input.jpg [--side left|right] output.jpg [--debug]
+"""
+
 import cv2, numpy as np, argparse, os
 from scipy.optimize import curve_fit
-import math
 
+# =======================
+# FUNZIONI DI UTILITY
+# =======================
 
 def save_jpg(img, out_path, quality=90):
+    """Salva un'immagine in formato JPG con qualità specificata."""
     cv2.imwrite(out_path, img, [cv2.IMWRITE_JPEG_QUALITY, quality])
 
 def resize_width_hd(img, target_width=1920):
+    """Ridimensiona l'immagine mantenendo il rapporto d'aspetto, dato un target_width."""
     h, w = img.shape[:2]
     scale = target_width / w
     new_h = int(h * scale)
@@ -14,6 +35,10 @@ def resize_width_hd(img, target_width=1920):
     return resized
 
 def auto_detect_side(img):
+    """
+    Rileva automaticamente il lato della piega (sinistra o destra)
+    in base alla luminosità dei bordi dell'immagine.
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape
     margin = 10
@@ -29,10 +54,15 @@ def auto_detect_side(img):
         return None
     return 'right' if left_brightness < right_brightness else 'left'
 
-
-def parabola(x, a, b, c): return a*x**2 + b*x + c
+def parabola(x, a, b, c):
+    """Funzione parabolica per fit."""
+    return a*x**2 + b*x + c
 
 def estimate_angle(gray, x_center, step=3):
+    """
+    Stima l'angolo della piega tramite fit parabolico e regressione lineare.
+    Ritorna: (angolo in gradi, coeff. angolare, intercetta, larghezza stimata)
+    """
     h = gray.shape[0]
     col_strip = gray[:, max(0, x_center - 2):min(gray.shape[1], x_center + 3)]
     mean_profile = col_strip.mean(axis=1)
@@ -65,6 +95,11 @@ def estimate_angle(gray, x_center, step=3):
     return angle, a, b, width
 
 def detect_fold_hough(img, side, debug=False, debug_dir=None):
+    """
+    Rileva la posizione della piega tramite analisi dei profili di luminosità e fit parabolico.
+    Opzionalmente salva immagini di debug.
+    Ritorna: (x_final, angolo, coeff. angolare, intercetta)
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5,5), 0)
 
@@ -102,6 +137,7 @@ def detect_fold_hough(img, side, debug=False, debug_dir=None):
         import matplotlib.pyplot as plt  # Import solo se serve
         os.makedirs(debug_dir, exist_ok=True)
 
+        # Plot profili di luminosità e fit parabolico
         fig, (ax1, ax2) = plt.subplots(2, 1, gridspec_kw={'height_ratios': [2, 1]}, figsize=(8, 6))
         for prof in filtered:
             ax1.plot(x_axis, prof, color='gray', linewidth=0.5, alpha=0.3)
@@ -133,7 +169,14 @@ def detect_fold_hough(img, side, debug=False, debug_dir=None):
 
     return x_final, angle, a, b
 
+# =======================
+# MAIN SCRIPT
+# =======================
+
 def main():
+    """
+    Parsing degli argomenti, caricamento immagine, rilevamento piega, crop, rotazione e salvataggio.
+    """
     p = argparse.ArgumentParser()
     p.add_argument("input")
     p.add_argument("--side", choices=('left','right'), default=None)
@@ -182,7 +225,7 @@ def main():
         else:
             cropped = rotated[:, x:]
 
-        # ...dopo il crop...
+        # Ridimensiona e salva il risultato finale
         cropped_hd = resize_width_hd(cropped, target_width=width)
         save_jpg(cropped_hd, args.out, quality=quality)
 
