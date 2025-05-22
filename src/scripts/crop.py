@@ -47,7 +47,7 @@ def estimate_angle(gray, x_center, step=3):
         width = np.clip(width_est, 7, 50)
     except:
         width = 20
-        print("⚠️ Fit parabolico fallito, uso width=20")
+        print("Fit parabolico fallito, uso width=20")
 
     x_start = max(0, x_center - width // 2)
     x_end = min(gray.shape[1], x_center + width // 2 + 1)
