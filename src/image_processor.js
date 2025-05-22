@@ -6,8 +6,9 @@ const {
   convertWorker,
   createThumbnailWorker
 } = require('./worker_forks');
-const { cropWorker } = require('./workers/crop_worker'); // aggiungi questa riga
+const { cropWorker } = require('./workers/crop_worker');
 const { getAllFolders } = require('./scripts/utils');
+const { create } = require('domain');
 
 module.exports = { processDir };
 
@@ -99,6 +100,9 @@ async function processDir(
   // Processa immagini
   if (images.length) {
     let current = 0;
+    const thumbsBaseCrop = path.join(baseOutput, 'thumbnails', relativePath);
+    await fs.mkdir(thumbsBaseCrop, { recursive: true }); // crea la dir una sola volta qui
+
     const tasks = images.map(file => async () => {
       if (shouldStopFn()) return;
       const src = path.join(dir, file);
@@ -112,13 +116,28 @@ async function processDir(
         try {
           await convertWorker(src, dest);
           if (crop) {
-            const thumbsBaseCrop = path.join(baseOutput, 'thumbnails', relativePath);
-            const cropDest = path.join(
+            // const thumbsBaseCrop = path.join(baseOutput, 'thumbnails', relativePath); // già definita sopra
+            const cropJpgDest = path.join(
+              thumbsBaseCrop,
+              path.basename(dest, '.webp') + `_book.jpg`
+            );
+            const cropWebpDest = path.join(
               thumbsBaseCrop,
               path.basename(dest, '.webp') + `_book.webp`
             );
-            await fs.mkdir(path.dirname(cropDest), { recursive: true });
-            await cropWorker(dest, cropDest);
+            // await fs.mkdir(path.dirname(cropJpgDest), { recursive: true }); // NON più necessario
+            await cropWorker(dest, cropJpgDest);
+
+            // Usa il thumbnail worker per creare il book.webp con profilo gallery
+            const galleryProfile = THUMBNAIL_ALIASES.gallery;
+            await createThumbnailWorker(
+              cropJpgDest,
+              cropWebpDest,
+              JSON.stringify(galleryProfile)
+            );
+
+            // Delete the intermediate JPG
+            await fs.unlink(cropJpgDest);
           }
         } catch (e) {
           errorFiles.push(`${src} - ${e.message}`);

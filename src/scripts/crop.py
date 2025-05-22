@@ -1,22 +1,18 @@
 import matplotlib.pyplot as plt
 import cv2, numpy as np, argparse, os
 from scipy.optimize import curve_fit
+import math
 
 
-def save_webp(img, out_path, width=1920, height=1080, quality=80):
-    # Resize mantenendo il rapporto
+def save_jpg(img, out_path, quality=90):
+    cv2.imwrite(out_path, img, [cv2.IMWRITE_JPEG_QUALITY, quality])
+
+def resize_width_hd(img, target_width=1920):
     h, w = img.shape[:2]
-    scale = min(width/w, height/h)
-    new_w, new_h = int(w*scale), int(h*scale)
-    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-    # Crea canvas nero HD e centra l'immagine
-    canvas = np.zeros((height, width, 3), dtype=np.uint8)
-    y_off = (height - new_h) // 2
-    x_off = (width - new_w) // 2
-    canvas[y_off:y_off+new_h, x_off:x_off+new_w] = resized
-    # Salva in WebP
-    cv2.imwrite(out_path, canvas, [cv2.IMWRITE_WEBP_QUALITY, quality])
-
+    scale = target_width / w
+    new_h = int(h * scale)
+    resized = cv2.resize(img, (target_width, new_h), interpolation=cv2.INTER_AREA)
+    return resized
 
 def auto_detect_side(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -146,6 +142,9 @@ def main():
     args = p.parse_args()
 
     img = cv2.imread(args.input)
+    width = min(1920, img.shape[1])
+    quality = 90  # for jpg
+
     if img is None:
         raise ValueError(f"Image not found: {args.input}")
 
@@ -158,7 +157,8 @@ def main():
 
     if side not in ('left', 'right'):
         print("Attenzione: Lato della piega non rilevato, salvo originale")
-        save_webp(img, args.out, width=1920, height=1080, quality=80)
+        hd_img = resize_width_hd(img, target_width=width)
+        save_jpg(hd_img, args.out, quality=quality)
         return
 
     x, angle, a, b = detect_fold_hough(img, side, debug=args.debug, debug_dir=debug_dir)
@@ -182,7 +182,9 @@ def main():
         else:
             cropped = rotated[:, x:]
 
-        save_webp(cropped, args.out, width=1920, height=1080, quality=80)
+        # ...dopo il crop...
+        cropped_hd = resize_width_hd(cropped, target_width=width)
+        save_jpg(cropped_hd, args.out, quality=quality)
 
 if __name__=="__main__":
     main()

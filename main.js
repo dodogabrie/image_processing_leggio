@@ -101,48 +101,48 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
         (csvProgress) => webContents.send('csv:progress', csvProgress),
         maxCsvLine
       );
-
-      // --- STOP CHECK prima di ZIP ---
-      if (shouldStop) {
-        return { success: false, error: 'Processo interrotto dall\'utente.' };
-      }
-
-      // --- ZIP WORKER CALL ---
-      const baseOut = finalOutputDir || path.join(process.env.HOME || process.env.USERPROFILE, 'output1', inputBaseName);
-      const organizedDir = path.join(baseOut, 'organized');
-      const organizedThumbDir = path.join(baseOut, 'organized_thumbnails');
-      const outputZip = path.join(baseOut, 'final_output.zip');
-
-      try {
-        await fs.access(organizedDir);
-        await fs.access(organizedThumbDir);
-
-        await new Promise((resolve, reject) => {
-          if (shouldStop) return reject(new Error('Processo interrotto dall\'utente.'));
-          const zipWorkerPath = path.join(__dirname, 'src', 'workers', 'zip_worker.js');
-          const child = fork(
-            zipWorkerPath,
-            [ organizedDir, organizedThumbDir, outputZip ],
-            {
-              execPath: process.env.NODE_ENV === 'development' ? 'node' : process.execPath,
-              stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-              // windowsHide: true
-            }
-          );
-          child.on('exit', code => {
-            if (code === 0) resolve();
-            else reject(new Error(`zip_worker exited with code ${code}`));
-          });
-        });
-
-        webContents.send('zip:done', outputZip);
-      } catch (err) {
-        console.error('Errore creazione zip finale:', err.message);
-        webContents.send('zip:error', err.message);
-        throw new Error('Errore creazione zip finale: ' + err.message);
-      }
-      // --- END ZIP WORKER CALL ---
     }
+
+    // --- STOP CHECK prima di ZIP ---
+    if (shouldStop) {
+      return { success: false, error: 'Processo interrotto dall\'utente.' };
+    }
+
+    // --- ZIP WORKER CALL ---
+    const baseOut = finalOutputDir || path.join(process.env.HOME || process.env.USERPROFILE, 'output1', inputBaseName);
+    const organizedDir = path.join(baseOut, 'organized');
+    const organizedThumbDir = path.join(baseOut, 'organized_thumbnails');
+    const outputZip = path.join(baseOut, 'final_output.zip');
+
+    try {
+      await fs.access(organizedDir);
+      await fs.access(organizedThumbDir);
+
+      await new Promise((resolve, reject) => {
+        if (shouldStop) return reject(new Error('Processo interrotto dall\'utente.'));
+        const zipWorkerPath = path.join(__dirname, 'src', 'workers', 'zip_worker.js');
+        const child = fork(
+          zipWorkerPath,
+          [ organizedDir, organizedThumbDir, outputZip ],
+          {
+            execPath: process.env.NODE_ENV === 'development' ? 'node' : process.execPath,
+            stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+            // windowsHide: true
+          }
+        );
+        child.on('exit', code => {
+          if (code === 0) resolve();
+          else reject(new Error(`zip_worker exited with code ${code}`));
+        });
+      });
+
+      webContents.send('zip:done', outputZip);
+    } catch (err) {
+      console.error('Errore creazione zip finale:', err.message);
+      webContents.send('zip:error', err.message);
+      throw new Error('Errore creazione zip finale: ' + err.message);
+    }
+    // --- END ZIP WORKER CALL ---
 
     return { success: true };
   } catch (err) {
