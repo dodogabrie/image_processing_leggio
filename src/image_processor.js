@@ -10,6 +10,7 @@ const {
 } = require('./worker_forks');
 const { cropWorker } = require('./workers/crop_worker');
 const { getAllFolders } = require('./scripts/utils');
+const EXCLUDED_FOLDERS = require('./scripts/excluded_folders'); // <-- aggiungi questa riga
 
 module.exports = { processDir };
 
@@ -115,7 +116,11 @@ async function processDir(
   // RICORSIONE SU SOTTOCARTELLE
   // =======================
   for (const sub of dirs) {
-    if (shouldStopFn() || sub === '$RECYCLE.BIN') continue;
+    // Escludi le cartelle presenti in EXCLUDED_FOLDERS (case-insensitive)
+    if (
+      shouldStopFn() ||
+      EXCLUDED_FOLDERS.some(ex => ex.toLowerCase() === sub.toLowerCase())
+    ) continue;
     await processDir(
       path.join(dir, sub),
       progressCallback,

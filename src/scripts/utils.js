@@ -1,9 +1,10 @@
 const fs = require('fs').promises;
 const path = require('path');
+const EXCLUDED_FOLDERS = require('./excluded_folders'); // <-- aggiungi questa riga
 
 /**
  * Restituisce ricorsivamente la lista di tutte le cartelle (inclusa quella di partenza)
- * a partire da 'dir'. Esclude le cartelle chiamate '$RECYCLE.BIN'.
+ * a partire da 'dir'. Esclude le cartelle presenti in EXCLUDED_FOLDERS.
  * @param {string} dir - Directory di partenza
  * @returns {Promise<string[]>} - Array di percorsi assoluti delle cartelle trovate
  */
@@ -18,8 +19,8 @@ async function getAllFolders(dir) {
     } catch {
       continue; // Se errore (es: permessi), salta
     }
-    // Se è una directory e NON è $RECYCLE.BIN, esplora ricorsivamente
-    if (stat.isDirectory() && file !== '$RECYCLE.BIN') {
+    // Escludi le cartelle presenti in EXCLUDED_FOLDERS (case-insensitive)
+    if (stat.isDirectory() && !EXCLUDED_FOLDERS.some(ex => ex.toLowerCase() === file.toLowerCase())) {
       folders = folders.concat(await getAllFolders(fullPath));
     }
   }
