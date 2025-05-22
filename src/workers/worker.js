@@ -1,27 +1,22 @@
 const sharp = require('sharp');
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
-const { stat } = fs.promises;
+const { stat } = fs;
 const [input, output] = process.argv.slice(2);
 
 (async () => {
-  const logError = (err) => {
+  const logError = async (err) => {
     console.error(err.stack || err.message);
     try {
+      // Non creare più la directory qui, si assume già esista
       const outDir = path.dirname(output || './');
-      if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
       const logPath = path.join(outDir, 'worker_error_log.txt');
       const logMsg = `[${new Date().toISOString()}] ${input} → ${output}\n${err.stack || err.message}\n\n`;
-      fs.appendFileSync(logPath, logMsg);
+      await fs.appendFile(logPath, logMsg);
     } catch (_) {}
   };
 
   try {
-    if (fs.existsSync(output)) {
-      console.error(`Output file already exists: ${output}`);
-      process.exit(0);
-    }
-
     const { size } = await stat(input);
     const originalKB = size / 1024;
 
@@ -45,7 +40,7 @@ const [input, output] = process.argv.slice(2);
 
     process.exit(0);
   } catch (err) {
-    logError(err);
+    await logError(err);
     process.exit(1);
   }
 })();

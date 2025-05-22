@@ -10,8 +10,8 @@ async function main() {
   }
   const opts = JSON.parse(aliasOptions);
   try {
-    await fs.mkdir(path.dirname(output), { recursive: true });
-    let img = sharp(input).resize(opts.size[0], opts.size[1], { fit: opts.crop ? 'cover' : 'inside' });
+    // Usa sempre fit: 'inside' per evitare crop
+    let img = sharp(input).resize(opts.size[0], opts.size[1], { fit: 'inside' });
     img = img.toFormat(opts.format, { quality: opts.quality });
     await img.toFile(output);
     process.exit(0);

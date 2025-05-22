@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import cv2, numpy as np, argparse, os
 from scipy.optimize import curve_fit
 import math
@@ -100,6 +99,7 @@ def detect_fold_hough(img, side, debug=False, debug_dir=None):
     angle, a, b, width = estimate_angle(gray, x_final, step=3)
 
     if debug and debug_dir:
+        import matplotlib.pyplot as plt  # Import solo se serve
         os.makedirs(debug_dir, exist_ok=True)
 
         fig, (ax1, ax2) = plt.subplots(2, 1, gridspec_kw={'height_ratios': [2, 1]}, figsize=(8, 6))

@@ -50,7 +50,7 @@ async function processDir(
   shouldStopFn = () => false,
   errorFiles = null,
   isRoot = true,
-  crop = true // crop parameter now controlled from frontend
+  crop = true
 ) {
   if (shouldStopFn()) return;
 
@@ -101,7 +101,15 @@ async function processDir(
   if (images.length) {
     let current = 0;
     const thumbsBaseCrop = path.join(baseOutput, 'thumbnails', relativePath);
-    await fs.mkdir(thumbsBaseCrop, { recursive: true }); // crea la dir una sola volta qui
+    const thumbsBase = path.join(baseOutput, 'thumbnails', relativePath);
+    await fs.mkdir(thumbsBaseCrop, { recursive: true });
+    if (thumbsBase !== thumbsBaseCrop) {  // Se sono diversi, crea la cartella
+      try {
+        await fs.mkdir(thumbsBase, { recursive: true });
+      } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+      }
+    }
 
     const tasks = images.map(file => async () => {
       if (shouldStopFn()) return;
@@ -145,8 +153,7 @@ async function processDir(
         }
       }
       // Thumbnails
-      const thumbsBase = path.join(baseOutput, 'thumbnails', relativePath);
-      await fs.mkdir(thumbsBase, { recursive: true });
+      // await fs.mkdir(thumbsBase, { recursive: true }); // <-- rimuovi questa riga dal ciclo
       for (const alias of Object.keys(THUMBNAIL_ALIASES)) {
         const thumbPath = path.join(
           thumbsBase,
