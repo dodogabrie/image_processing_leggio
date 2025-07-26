@@ -88,6 +88,7 @@ async function organizeFromCsv(csvPath, webpDir, outputDir, progressCallback = (
 
       // estrai e sluggifica il titolo
       const rawTitle = row["TITOLO PER LEGGIO\nda compilare o revisionare Letizia"] || "";
+      console.log(row)
       if (!rawTitle || rawTitle === "") {
         // skip the image
         console.log(`[organize_by_csv] TITOLO non trovato per codice ${codice}`);
