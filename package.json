@@ -2,15 +2,19 @@
   "name": "electron_image_preprocessing_leggio",
   "version": "1.0.0",
   "description": "App for preprocessing images for Leggio project",
-  "main": "main.js",
+  "main": "src/electron/main.js",
   "author": {
     "name": "Edoardo",
     "email": "edoardo.gabrielli@grupposcai.it"
   },
   "homepage": "https://imageprocessorleggio.com",
+  "type": "module",
   "scripts": {
-    "start": "cross-env NODE_ENV=development electron .",
-    "build": "electron-builder"
+    "dev": "concurrently \"npm:serve-vue\" \"npm:serve-electron\"",
+    "serve-vue": "vite",
+    "serve-electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
+    "build": "vite build && electron-builder",
+    "start": "cross-env NODE_ENV=production electron ."
   },
   "build": {
     "appId": "com.space.imageprocessorleggio",
@@ -53,11 +57,16 @@
     "cli-progress": "^3.12.0",
     "csv-parse": "^5.6.0",
     "sharp": "^0.34.1",
-    "slugify": "^1.6.6"
+    "slugify": "^1.6.6",
+    "vue": "^3.5.18"
   },
   "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
     "cross-env": "^7.0.3",
+    "concurrently": "^8.2.1",
     "electron": "^35.2.1",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "wait-on": "^7.0.1",
+    "vite": "^7.0.6"
   }
 }

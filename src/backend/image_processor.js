@@ -1,18 +1,16 @@
 // =======================
 // IMPORTS E COSTANTI
 // =======================
-const fs = require('fs').promises;
-const path = require('path');
-const os = require('os');
-const {
-  convertWorker,
-  createThumbnailWorker
-} = require('./worker_forks');
-const { cropWorker } = require('./workers/crop_worker');
-const { getAllFolders } = require('./scripts/utils');
-const EXCLUDED_FOLDERS = require('./scripts/excluded_folders'); // <-- aggiungi questa riga
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
+import { convertWorker, createThumbnailWorker } from './worker_forks.js';
+import { cropWorker } from './workers/crop_worker.js';
+import { getAllFolders } from './scripts/utils.js';
+import EXCLUDED_FOLDERS from './scripts/excluded_folders.js';
+import Logger from '../backend/Logger.js';
 
-module.exports = { processDir };
+const logger = new Logger();
 
 // Numero massimo di processi paralleli per batch processing
 const total = os.cpus().length;
@@ -20,8 +18,8 @@ const MAX_PARALLEL = total > 4 ? total - 1 : Math.max(1, Math.floor(total / 2));
 
 // Profili delle thumbnails generate
 const THUMBNAIL_ALIASES = {
-  low_quality: { size: [640, 480], quality: 75, crop: false, format: 'webp' },
-  gallery:     { size: [1920,1080], quality: 75, crop: false, format: 'webp' }
+  low_quality:  { size: [640, 480],   quality: 75, crop: false, format: 'webp' },
+  gallery:      { size: [1920, 1080], quality: 75, crop: false, format: 'webp' }
 };
 
 // =======================
@@ -37,6 +35,7 @@ async function processInBatches(tasks, maxParallel) {
   const results = [];
   const queue = [...tasks];
   const running = [];
+
   while (queue.length || running.length) {
     while (running.length < maxParallel && queue.length) {
       const p = queue.shift()().finally(() => {
@@ -47,6 +46,7 @@ async function processInBatches(tasks, maxParallel) {
     }
     await Promise.race(running);
   }
+
   return Promise.allSettled(results);
 }
 
@@ -65,7 +65,7 @@ async function processInBatches(tasks, maxParallel) {
  * @param {boolean} isRoot - True se è la chiamata principale
  * @param {boolean} crop - Se true, esegue anche il crop delle immagini
  */
-async function processDir(
+export async function processDir(
   dir,
   progressCallback = () => {},
   baseInput = dir,
@@ -87,11 +87,66 @@ async function processDir(
 
   if (!folderInfo) {
     const allFolders = await getAllFolders(baseInput);
-    folderInfo = { allFolders, currentFolderIdx: 0 };
+    
+    // Controlla se la cartella principale contiene immagini
+    const mainFolderEntries = await fs.readdir(baseInput, { withFileTypes: true });
+    const mainFolderImages = mainFolderEntries
+      .filter(e => !e.isDirectory() && /\.(tif|jpe?g|png)$/i.test(e.name))
+      .map(e => e.name);
+    
+    // Prepara lista cartelle da processare
+    const foldersToProcess = [];
+    
+    // Aggiungi cartella principale se contiene immagini
+    if (mainFolderImages.length > 0) {
+      foldersToProcess.push({
+        path: baseInput,
+        name: `📁 Cartella principale (${path.basename(baseInput)})`,
+        relativePath: '.',
+        isMainFolder: true,
+        status: 'pending',
+        progress: 0,
+        current: 0,
+        total: 0
+      });
+    }
+    
+    // Aggiungi sottocartelle (escludendo la principale)
+    const subFolders = allFolders.filter(folder => path.resolve(folder) !== path.resolve(baseInput));
+    subFolders.forEach(folder => {
+      foldersToProcess.push({
+        path: folder,
+        name: path.basename(folder),
+        relativePath: path.relative(baseInput, folder),
+        isMainFolder: false,
+        status: 'pending',
+        progress: 0,
+        current: 0,
+        total: 0
+      });
+    });
+    
+    folderInfo = { 
+      allFolders: [baseInput, ...subFolders], // Include baseInput per il processing
+      currentFolderIdx: 0,
+      foldersStatus: foldersToProcess,
+      hasSubfolders: foldersToProcess.length > 1, // Più di una cartella = caso misto o solo sottocartelle
+      hasMainFolder: mainFolderImages.length > 0
+    };
+    
+    // Emetti sempre l'inizializzazione
     progressCallback({
-      current: 0, total: 0,
-      folderIdx: 0, folderTotal: allFolders.length,
-      currentFolder: '', currentFile: ''
+      type: 'folders_init',
+      foldersStatus: folderInfo.foldersStatus,
+      hasSubfolders: folderInfo.hasSubfolders,
+      hasMainFolder: folderInfo.hasMainFolder,
+      totalFolders: foldersToProcess.length,
+      current: 0,
+      total: 0,
+      folderIdx: 0,
+      folderTotal: foldersToProcess.length,
+      currentFolder: '',
+      currentFile: ''
     });
     errorFiles = [];
   }
@@ -99,16 +154,27 @@ async function processDir(
   folderInfo.currentFolderIdx =
     folderInfo.allFolders.findIndex(f => path.resolve(f) === path.resolve(dir)) + 1;
 
+  // Aggiorna stato cartella corrente nella foldersStatus
+  const currentFolderStatus = folderInfo.foldersStatus.find(
+    f => path.resolve(f.path) === path.resolve(dir)
+  );
+  if (currentFolderStatus) {
+    currentFolderStatus.status = 'processing';
+  }
+
   const relativePath = path.relative(baseInput, dir);
   const outDir = path.join(baseOutput, relativePath);
   await fs.mkdir(outDir, { recursive: true });
 
   const entries = await fs.readdir(dir, { withFileTypes: true });
-  const dirs = entries.filter(e => e.isDirectory()).map(e => e.name);
+  const dirs   = entries.filter(e => e.isDirectory()).map(e => e.name);
   const images = entries
     .filter(e => !e.isDirectory() && /\.(tif|jpe?g|png)$/i.test(e.name))
     .map(e => e.name);
-  const xmls = entries
+  const videos = entries
+    .filter(e => !e.isDirectory() && /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(e.name))
+    .map(e => e.name);
+  const xmls   = entries
     .filter(e => !e.isDirectory() && /\.xml$/i.test(e.name))
     .map(e => e.name);
 
@@ -116,11 +182,11 @@ async function processDir(
   // RICORSIONE SU SOTTOCARTELLE
   // =======================
   for (const sub of dirs) {
-    // Escludi le cartelle presenti in EXCLUDED_FOLDERS (case-insensitive)
     if (
       shouldStopFn() ||
       EXCLUDED_FOLDERS.some(ex => ex.toLowerCase() === sub.toLowerCase())
     ) continue;
+
     await processDir(
       path.join(dir, sub),
       progressCallback,
@@ -137,14 +203,21 @@ async function processDir(
   // =======================
   // PROCESSING IMMAGINI NELLA CARTELLA CORRENTE
   // =======================
+  logger.info(`Processing images in: ${dir}`);
   if (images.length) {
+    logger.info(`Found ${images.length} images in: ${dir}`);
     let current = 0;
 
-    // Prepara le directory per i crop e le thumbnails (una sola volta per cartella)
+    // Aggiorna il totale per questa cartella
+    if (currentFolderStatus) {
+      currentFolderStatus.total = images.length;
+      currentFolderStatus.current = 0;
+    }
+
     const thumbsBaseCrop = path.join(baseOutput, 'thumbnails', relativePath);
-    const thumbsBase = path.join(baseOutput, 'thumbnails', relativePath);
+    const thumbsBase     = path.join(baseOutput, 'thumbnails', relativePath);
     await fs.mkdir(thumbsBaseCrop, { recursive: true });
-    if (thumbsBase !== thumbsBaseCrop) {  // Se sono diversi, crea la cartella
+    if (thumbsBase !== thumbsBaseCrop) {
       try {
         await fs.mkdir(thumbsBase, { recursive: true });
       } catch (e) {
@@ -152,47 +225,26 @@ async function processDir(
       }
     }
 
-    // Crea una lista di task asincroni per ogni immagine
     const tasks = images.map(file => async () => {
       if (shouldStopFn()) return;
-      const src = path.join(dir, file);
+      const src  = path.join(dir, file);
       const dest = path.join(outDir, file.replace(/\.\w+$/, '.webp'));
-      let skip = false;
+      let skip   = false;
+
       try {
-        // Se il file di destinazione esiste già e ha size > 0, salta la conversione
         if ((await fs.stat(dest)).size > 0) skip = true;
         else await fs.unlink(dest);
       } catch {}
+
       if (!skip) {
         try {
-          // =======================
-          // CONVERSIONE IMMAGINE IN WEBP
-          // =======================
           await convertWorker(src, dest);
 
-          // =======================
-          // CROP (OPZIONALE) E GENERAZIONE BOOK.WEBP
-          // =======================
           if (crop) {
-            const cropJpgDest = path.join(
-              thumbsBaseCrop,
-              path.basename(dest, '.webp') + `_book.jpg`
-            );
-            const cropWebpDest = path.join(
-              thumbsBaseCrop,
-              path.basename(dest, '.webp') + `_book.webp`
-            );
+            const cropJpgDest  = path.join(thumbsBaseCrop, `${path.basename(dest, '.webp')}_book.jpg`);
+            const cropWebpDest = path.join(thumbsBaseCrop, `${path.basename(dest, '.webp')}_book.webp`);
             await cropWorker(dest, cropJpgDest);
-
-            // Usa il thumbnail worker per creare il book.webp con profilo gallery
-            const galleryProfile = THUMBNAIL_ALIASES.gallery;
-            await createThumbnailWorker(
-              cropJpgDest,
-              cropWebpDest,
-              JSON.stringify(galleryProfile)
-            );
-
-            // Elimina il file JPG temporaneo dopo la conversione
+            await createThumbnailWorker(cropJpgDest, cropWebpDest, JSON.stringify(THUMBNAIL_ALIASES.gallery));
             await fs.unlink(cropJpgDest);
           }
         } catch (e) {
@@ -201,30 +253,27 @@ async function processDir(
         }
       }
 
-      // =======================
-      // GENERAZIONE THUMBNAILS (PER OGNI ALIAS)
-      // =======================
       for (const alias of Object.keys(THUMBNAIL_ALIASES)) {
-        const thumbPath = path.join(
-          thumbsBase,
-          path.basename(dest, '.webp') + `_${alias}.webp`
-        );
+        const thumbPath = path.join(thumbsBase, `${path.basename(dest, '.webp')}_${alias}.webp`);
         try {
-          await createThumbnailWorker(
-            dest,
-            thumbPath,
-            JSON.stringify(THUMBNAIL_ALIASES[alias])
-          );
+          await createThumbnailWorker(dest, thumbPath, JSON.stringify(THUMBNAIL_ALIASES[alias]));
         } catch (e) {
           errorFiles.push(`${dest} (${alias}) - ${e.message}`);
         }
       }
 
-      // =======================
-      // AGGIORNAMENTO PROGRESS
-      // =======================
       current++;
+      
+      // Aggiorna progress della cartella corrente
+      if (currentFolderStatus) {
+        currentFolderStatus.current = current;
+        currentFolderStatus.progress = Math.floor((current / images.length) * 100);
+      }
+      
       progressCallback({
+        type: folderInfo.hasSubfolders ? 'file_progress' : 'main_folder_progress',
+        foldersStatus: folderInfo.foldersStatus,
+        hasSubfolders: folderInfo.hasSubfolders,
         current,
         total: images.length,
         folderIdx: folderInfo.currentFolderIdx,
@@ -234,10 +283,13 @@ async function processDir(
       });
     });
 
-    // =======================
-    // ESECUZIONE TASKS IN BATCHES PARALLELI
-    // =======================
     await processInBatches(tasks, MAX_PARALLEL);
+    
+    // Segna cartella come completata
+    if (currentFolderStatus) {
+      currentFolderStatus.status = 'completed';
+      currentFolderStatus.progress = 100;
+    }
   }
 
   // =======================
@@ -245,10 +297,25 @@ async function processDir(
   // =======================
   for (const file of xmls) {
     if (shouldStopFn()) break;
-    const src = path.join(dir, file);
+    const src  = path.join(dir, file);
     const dest = path.join(outDir, file);
     try {
       await fs.copyFile(src, dest);
+    } catch (e) {
+      errorFiles.push(`${src} - ${e.message}`);
+    }
+  }
+
+  // =======================
+  // COPIA FILE VIDEO (SE PRESENTI)
+  // =======================
+  for (const file of videos) {
+    if (shouldStopFn()) break;
+    const src  = path.join(dir, file);
+    const dest = path.join(outDir, file);
+    try {
+      await fs.copyFile(src, dest);
+      logger.info(`Copied video: ${file}`);
     } catch (e) {
       errorFiles.push(`${src} - ${e.message}`);
     }

@@ -1,6 +1,5 @@
-const sharp = require('sharp');
-const fs = require('fs').promises;
-const path = require('path');
+import sharp from 'sharp';
+import path from 'path';
 
 async function main() {
   const [,, input, output, aliasOptions] = process.argv;

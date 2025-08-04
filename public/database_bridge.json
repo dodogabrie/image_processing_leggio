@@ -1,0 +1,46 @@
+{
+  "document": {
+    "identifier": "Slug univoco generato dal titolo del documento",
+    "title": "Titolo completo del documento digitale",
+    "groupBy": "Campo che servirà per raggruppare le immagini di un documento sotto la stessa cartella",
+    "creator": "Nome dell'autore o fotografo",
+    "active": "Booleano: true se il documento deve essere mostrato",
+    "tags": "Categorie o etichette associate al documento",
+    "date": "Data di creazione o pubblicazione (stringa o null)",
+    "document_type": "Tipologia di materiale/documento",
+    "periodo": "Periodo cronologico associato al documento",
+    "language": "Codice lingua del documento (es. \"it\")",
+    "metadata_available": "Booleano: true se sono disponibili metadata",
+    "metadata_just_year": "Booleano: true se la data è solo un anno"
+  },
+  "image": {
+    "filename": "Nome del file immagine (senza estensione)",
+    "filepath": "Percorso completo del file immagine",
+    "sequence_number": "Ordine dell'immagine all'interno del documento",
+    "nomenclature": "Denominazione o soggetto dell'immagine",
+    "usage": "Tipologia d’uso dell’immagine (es. \"master\")",
+    "code": "Codice identificativo dell’immagine (uguale al filename senza estensione)",
+    "md5": "Checksum MD5 del file immagine",
+    "filesize": "Dimensione del file immagine in byte",
+    "image_dimensions": {
+      "length": "Lunghezza dell'immagine in pixel",
+      "width": "Larghezza dell'immagine in pixel"
+    },
+    "image_metrics": {
+      "sampling_frequency_unit": "Unità di misura della frequenza di campionamento",
+      "sampling_frequency_plane": "Piano di campionamento",
+      "x_sampling_frequency": "Frequenza di campionamento asse X",
+      "y_sampling_frequency": "Frequenza di campionamento asse Y",
+      "photometric_interpretation": "Interpretazione fotometrica dell'immagine",
+      "bit_per_sample": "Bit per campione"
+    },
+    "format": {
+      "name": "Nome del formato dell'immagine (es. \"JPEG\")",
+      "mime": "Tipo MIME dell'immagine (es. \"image/jpeg\")",
+      "compression": "Tipo di compressione (es. \"lossy\")"
+    },
+    "datetime_created": "Data/ora di creazione dell’immagine (stringa o null)",
+    "rich_description_prefix": "Prefisso per la colonna CSV contenente la didascalia estesa",
+    "active": "Booleano: true se l’immagine deve essere mostrata"
+  }
+}
