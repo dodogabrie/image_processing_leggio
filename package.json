@@ -24,7 +24,11 @@
       "output": "dist"
     },
     "files": [
-      "**/*"
+      "src/electron/**/*",
+      "src/backend/**/*",
+      "public/**/*",
+      "dist/client/**/*",
+      "package.json"
     ],
     "asarUnpack": [
       "src/scripts/crop.py",

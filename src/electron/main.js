@@ -37,7 +37,11 @@ function createWindow() {
   if (process.env.NODE_ENV === 'development') {
     win.loadURL('http://localhost:3000');
   } else {
-    win.loadFile(path.join(__dirname, '../../dist/client/index.html'));
+    // In produzione, il file è nella stessa cartella dell'app pacchettata
+    const htmlPath = app.isPackaged 
+      ? path.join(process.resourcesPath, 'app.asar', 'dist', 'client', 'index.html')
+      : path.join(__dirname, '../../dist/client/index.html');
+    win.loadFile(htmlPath);
   }
 }
 
