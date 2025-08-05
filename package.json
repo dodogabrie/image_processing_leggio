@@ -30,6 +30,13 @@
       "dist/client/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "public",
+        "to": "public",
+        "filter": ["**/*"]
+      }
+    ],
     "asarUnpack": [
       "src/scripts/crop.py",
       "requirements.txt"

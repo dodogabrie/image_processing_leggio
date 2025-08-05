@@ -246,6 +246,7 @@ watch(selectedFolder, async folder => {
   try {
     databaseBridge.value = JSON.parse(await window.electronAPI.readPublicFile('database_bridge.json'))
   } catch {
+    console.log('Cannot load default CSV map, using empty map')
     databaseBridge.value = { document: {}, image: {} }
   }
 
@@ -286,6 +287,7 @@ watch(selectedFolder, async folder => {
   try {
     userMap = JSON.parse(await window.electronAPI.readPublicFile('default_csv_map.json'))
   } catch {
+    console.log('Cannot load default CSV map, using empty map')
     userMap = { document: {}, image: {} }
   }
   csvMapping.value = flattenMap(userMap)

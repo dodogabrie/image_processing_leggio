@@ -45,10 +45,12 @@ function createWindow() {
   }
 }
 
-// Handler per file pubblici e dialog
+// Lettura file pubblico
 ipcMain.handle('public:readFile', async (_e, filename) => {
   try {
-    const publicPath = path.join(process.cwd(), 'public', filename);
+    const publicPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'public', filename)
+      : path.join(process.cwd(), 'public', filename);
     return await fs.readFile(publicPath, 'utf-8');
   } catch (err) {
     logger.error('[main] public:readFile error:', err.message);
@@ -56,9 +58,12 @@ ipcMain.handle('public:readFile', async (_e, filename) => {
   }
 });
 
+// Scrittura file pubblico
 ipcMain.handle('public:writeFile', async (_e, filename, content) => {
   try {
-    const publicPath = path.join(process.cwd(), 'public', filename);
+    const publicPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'public', filename)
+      : path.join(process.cwd(), 'public', filename);
     await fs.writeFile(publicPath, content, 'utf-8');
     return { success: true };
   } catch (err) {
