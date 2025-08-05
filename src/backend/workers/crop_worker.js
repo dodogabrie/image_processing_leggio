@@ -21,11 +21,12 @@ export function cropWorker(input, output) {
 
   const scriptPath =
     process.env.NODE_ENV === 'development'
-      ? path.join(__dirname, '..', 'scripts', 'crop.py')
+      ? path.join(__dirname, '..', 'backend', 'scripts', 'crop.py')
       : path.join(
           process.resourcesPath,
           'app.asar.unpacked',
           'src',
+          'backend',
           'scripts',
           'crop.py'
         );

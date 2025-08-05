@@ -46,6 +46,9 @@ export default class Logger {
   }
 
   _writeToFile(msg) {
+    // Temporaneamente disabilitato per debug
+    return;
+    
     if (!this.logFilePath) {
       console.log('[Logger] SKIPPING: no logFilePath');
       return;

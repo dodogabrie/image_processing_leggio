@@ -18,7 +18,7 @@ export function cropPageWorker(input, output, minArea = 200000) {
     process.platform === 'win32'
       ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
       : path.join(__dirname, 'venv', 'bin', 'python3');
-  const scriptPath = path.join(__dirname, 'scripts', 'crop.py');
+  const scriptPath = path.join(__dirname, 'backend', 'scripts', 'crop.py');
 
   return new Promise((resolve, reject) => {
     const child = spawn(pythonPath, [scriptPath, input, output, String(minArea)], {

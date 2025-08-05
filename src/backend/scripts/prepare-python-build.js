@@ -23,7 +23,16 @@ const pipPath = path.join(venvPath, pipDir, process.platform === 'win32' ? 'pip.
 
 if (existsSync(requirementsPath)) {
   console.log(`[prepare-python] Installing dependencies from: ${requirementsPath}`);
-  execSync(`"${pipPath}" install -r "${requirementsPath}"`, { stdio: 'inherit' });
+  try {
+    execSync(`"${pipPath}" install -r "${requirementsPath}"`, { stdio: 'inherit' });
+    console.log(`[prepare-python] Dependencies installed successfully`);
+  } catch (error) {
+    console.error(`[prepare-python] Failed to install dependencies:`, error.message);
+    throw error;
+  }
+} else {
+  console.warn(`[prepare-python] No requirements.txt found at: ${requirementsPath}`);
+  console.log(`[prepare-python] Skipping dependency installation`);
 }
 
 console.log('[prepare-python] Python environment prepared successfully');
