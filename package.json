@@ -44,7 +44,7 @@
       }
     ],
     "asarUnpack": [
-      "src/scripts/crop.py",
+      "src/backend/scripts/crop.py",
       "requirements.txt"
     ],
     "linux": {
