@@ -13,7 +13,8 @@
     "dev": "concurrently \"npm:serve-vue\" \"npm:serve-electron\"",
     "serve-vue": "vite",
     "serve-electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
-    "build": "cross-env NODE_ENV=production vite build && cross-env NODE_ENV=production electron-builder",
+    "build": "cross-env NODE_ENV=production vite build && npm run prepare-python && cross-env NODE_ENV=production electron-builder",
+    "prepare-python": "node src/backend/scripts/prepare-python-build.js",
     "start": "cross-env NODE_ENV=production electron ."
   },
   "build": {
@@ -34,6 +35,11 @@
       {
         "from": "public",
         "to": "public",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "build-venv",
+        "to": "venv",
         "filter": ["**/*"]
       }
     ],

@@ -9,8 +9,8 @@ const __dirname = dirname(__filename);
 
 const venvPath =
   process.env.NODE_ENV === 'development'
-    ? path.join(__dirname, '..', '..', '..', 'venv')
-    : path.join(process.resourcesPath, 'backend', 'venv');
+    ? path.join(process.cwd(), 'venv')
+    : path.join(process.resourcesPath, 'venv');
 
 export function cropWorker(input, output) {
   const pythonPath =
