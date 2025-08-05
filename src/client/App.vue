@@ -62,6 +62,15 @@
 
     <pre class="font-monospace text-primary">{{ csvText }}</pre>
 
+    <!-- Mostra warning se ci sono colonne CSV senza mapping nel JSON -->
+    <div v-if="missingCsvColumns.length" class="alert alert-warning mt-4">
+      <strong>Attenzione:</strong> le seguenti colonne non saranno importate perché non è stato possibile associarle a un campo del database:
+      <ul class="mb-0">
+        <li v-for="col in missingCsvColumns" :key="col">{{ col }}</li>
+      </ul>
+      Nel caso le colonne elencate presentino campi rilevanti, contattare l'assistenza tecnica.
+    </div>
+
     <!-- Collapsible mapping panel -->
     <div v-if="showMapping" class="mt-4">
       <div class="card">
@@ -113,11 +122,29 @@
       </div>
     </div>
   </div>
+
+  <!-- Modal di risultato -->
+  <div v-if="showResultModal" class="modal fade show d-block" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ resultSuccess ? 'Successo' : 'Errore' }}</h5>
+          <button type="button" class="btn-close" @click="closeResultModal"></button>
+        </div>
+        <div class="modal-body">
+          <p>{{ resultMessage }}</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeResultModal">Chiudi</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop fade show" v-if="showResultModal"></div>
 </template>
 
 <script setup>
 // Component imports
-import MapCSV from './components/MapCSV.vue';
 import CsvPreview from './components/CsvPreview.vue';
 import FolderProgress from './components/FolderProgress.vue';
 
@@ -236,8 +263,19 @@ const databaseBridge = ref({ document: {}, image: {} })
       })
     })
 
+// Aggiungi ref per le intestazioni filtrate
+const filteredHeaders = ref([]);
+
+// Computed per colonne CSV senza mapping
+const missingCsvColumns = computed(() => {
+  return filteredHeaders.value.filter(header => {
+    const mapped = [...Object.values(resolvedFlat.document), ...Object.values(resolvedFlat.image)];
+    return header && !mapped.includes(header);
+  });
+})
+
 // Watcher per quando viene selezionata la cartella CSV
-watch(selectedFolder, async folder => {
+const resolveMappingWatch = watch(selectedFolder, async folder => {
   if (!folder) {
     csvMappingFile.value = ''
     return
@@ -271,16 +309,16 @@ watch(selectedFolder, async folder => {
   csvHeaders.value = await window.electronAPI.getCsvHeaders(`${folder}/${csvFile}`)
 
   // Filtra colonne con suffisso [lang], mantenendo solo la prima occorrenza per base
-  const filteredHeaders = []
-  const seenBases = new Set()
-  csvHeaders.value.forEach(header => {
-    const match = header.match(/^(.*)\[[^\]]+\]$/)
-    const base = match ? match[1] : header
-    if (!seenBases.has(base)) {
-      seenBases.add(base)
-      filteredHeaders.push(header)
-    }
-  })
+  filteredHeaders.value = [];
+   const seenBases = new Set()
+   csvHeaders.value.forEach(header => {
+     const match = header.match(/^(.*)\[[^\]]+\]$/)
+     const base = match ? match[1] : header
+     if (!seenBases.has(base)) {
+       seenBases.add(base)
+       filteredHeaders.value.push(header)
+     }
+   })
 
   // Carica mappa utente di default e appiattiscila
   let userMap = {}
@@ -300,7 +338,7 @@ watch(selectedFolder, async folder => {
       if (typeof descriptor === 'string' && descriptor.trim()) {
         // trova la prima intestazione filtrata che inizia con il descriptor
         const lowerDesc = descriptor.trim().toLowerCase()
-        matchHeader = filteredHeaders.find(h => h.toLowerCase().startsWith(lowerDesc)) || ''
+        matchHeader = filteredHeaders.value.find(h => h.toLowerCase().startsWith(lowerDesc)) || ''
       }
       resolvedFlat[sec][key] = matchHeader
     })
@@ -309,7 +347,18 @@ watch(selectedFolder, async folder => {
   showMapping.value = true
 })
 
-    // Selezione cartelle e process
+// Computed unmapped mapping fields
+const unmapped = computed(() => {
+  const missing = [];
+  ['document', 'image'].forEach(sec => {
+    Object.entries(resolvedFlat[sec] || {}).forEach(([key, val]) => {
+      if (!val) missing.push(`${sec}.${key}`);
+    });
+  });
+  return missing;
+})
+
+// Selezione cartelle e process
     const selectFolder = async () => {
       const f = await window.electronAPI.selectFolder()
       if (f) selectedFolder.value = f
@@ -338,7 +387,11 @@ watch(selectedFolder, async folder => {
       processing.value = false
       loadingText.value = ''
       showFolderProgress.value = false
-      alert(res.success ? 'Finito!' : 'Errore: ' + (res.error || ''))
+
+      // Imposta risultato e mostra modal
+      resultSuccess.value = res.success
+      resultMessage.value = res.success ? 'Processamento completato con successo!' : 'Errore: ' + (res.error || '')
+      showResultModal.value = true
     }
     const stopProcess = () => {
     if (processing.value) window.electronAPI.stopProcessing()
