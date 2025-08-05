@@ -13,7 +13,7 @@
     "dev": "concurrently \"npm:serve-vue\" \"npm:serve-electron\"",
     "serve-vue": "vite",
     "serve-electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
-    "build": "vite build && electron-builder",
+    "build": "cross-env NODE_ENV=production vite build && cross-env NODE_ENV=production electron-builder",
     "start": "cross-env NODE_ENV=production electron ."
   },
   "build": {
