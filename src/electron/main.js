@@ -114,10 +114,17 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
     // 1) Setup Python if needed
     if (crop) {
       try {
-        setupPythonEnv();
+        await setupPythonEnv();
+        logger.info('[main] Python environment setup completed');
       } catch (err) {
-        dialog.showErrorBox('Errore ambiente Python', err.message);
-        return { success: false, error: err.message };
+        logger.error('[main] Python setup error:', err.message);
+        // In development, continua senza Python virtuale
+        if (process.env.NODE_ENV === 'development') {
+          logger.warn('[main] Continuing without virtual environment in development mode');
+        } else {
+          dialog.showErrorBox('Errore ambiente Python', err.message);
+          return { success: false, error: err.message };
+        }
       }
     }
 

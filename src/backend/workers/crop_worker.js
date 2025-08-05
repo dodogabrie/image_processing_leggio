@@ -9,14 +9,15 @@ const __dirname = dirname(__filename);
 
 const venvPath =
   process.env.NODE_ENV === 'development'
-    ? path.join(process.cwd(), 'venv')
+    ? null // In development, usa Python di sistema
     : path.join(process.resourcesPath, 'venv');
 
 export function cropWorker(input, output) {
-  const pythonPath =
-    process.platform === 'win32'
-      ? path.join(venvPath, 'Scripts', 'python.exe')
-      : path.join(venvPath, 'bin', 'python3');
+  const pythonPath = process.env.NODE_ENV === 'development'
+    ? (process.platform === 'win32' ? 'python' : 'python3') // Python di sistema
+    : (process.platform === 'win32'
+        ? path.join(venvPath, 'Scripts', 'python.exe')
+        : path.join(venvPath, 'bin', 'python3'));
 
   const scriptPath =
     process.env.NODE_ENV === 'development'
@@ -44,8 +45,8 @@ export function cropWorker(input, output) {
   return new Promise((resolve, reject) => {
     const args = [scriptPath, input, output];
 
-    // Controlla che pythonPath esista
-    if (!fs.existsSync(pythonPath)) {
+    // Controlla che pythonPath esista (solo in produzione)
+    if (process.env.NODE_ENV !== 'development' && !fs.existsSync(pythonPath)) {
       log(`ERROR: Python interpreter not found at ${pythonPath}`);
       return reject(new Error(`Python interpreter not found at ${pythonPath}`));
     }

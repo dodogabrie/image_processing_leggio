@@ -27,3 +27,15 @@ if (existsSync(requirementsPath)) {
 }
 
 console.log('[prepare-python] Python environment prepared successfully');
+
+// Verifica che tutto sia stato creato correttamente
+const pythonPath2 = path.join(venvPath, pipDir, process.platform === 'win32' ? 'python.exe' : 'python3');
+
+console.log(`[prepare-python] Verification:`);
+console.log(`[prepare-python] - pip exists: ${existsSync(pipPath)}`);
+console.log(`[prepare-python] - python exists: ${existsSync(pythonPath2)}`);
+console.log(`[prepare-python] - venv path: ${venvPath}`);
+
+if (!existsSync(pipPath) || !existsSync(pythonPath2)) {
+  throw new Error('Virtual environment creation failed - missing executables');
+}
