@@ -79,19 +79,11 @@ jobs:
             name: Release ${{ github.ref_name }}
             draft: false
             prerelease: false
+            files: |
+              dist-windows/**/*.exe
+              dist-windows/**/*.nsis
+              dist-macos/**/*.dmg
           env:
             GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-  
-        - name: Upload Windows build to Release
-          uses: softprops/action-gh-release@v2
-          with:
-            files: dist-windows/**
-          env:
-            GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-  
-        - name: Upload macOS build to Release
-          uses: softprops/action-gh-release@v2
-          with:
-            files: dist-macos/**
-          env:
-            GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+        # Rimuovi i due step separati di upload dato che ora files è incluso sopra
