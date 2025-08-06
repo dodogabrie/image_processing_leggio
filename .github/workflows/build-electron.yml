@@ -55,3 +55,43 @@ jobs:
         with:
           name: build-macos-latest
           path: dist/
+
+  release:
+      needs: [build, build-mac]
+      runs-on: ubuntu-latest
+      steps:
+        - name: Download Windows artifact
+          uses: actions/download-artifact@v4
+          with:
+            name: build-windows-latest
+            path: dist-windows
+  
+        - name: Download macOS artifact
+          uses: actions/download-artifact@v4
+          with:
+            name: build-macos-latest
+            path: dist-macos
+  
+        - name: Create GitHub Release
+          uses: softprops/action-gh-release@v2
+          with:
+            tag_name: ${{ github.ref_name }}
+            name: Release ${{ github.ref_name }}
+            draft: false
+            prerelease: false
+          env:
+            GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+  
+        - name: Upload Windows build to Release
+          uses: softprops/action-gh-release@v2
+          with:
+            files: dist-windows/**
+          env:
+            GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+  
+        - name: Upload macOS build to Release
+          uses: softprops/action-gh-release@v2
+          with:
+            files: dist-macos/**
+          env:
+            GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

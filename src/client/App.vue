@@ -175,6 +175,14 @@ const showFolderProgress = ref(false)
 // Path del file CSV per l'anteprima
 const csvMappingFile = ref('')
 
+// Stato per il modal di risultato
+const showResultModal = ref(false)
+const resultSuccess = ref(false)
+const resultMessage = ref('')
+
+// Funzione per chiudere il modal
+const closeResultModal = () => { showResultModal.value = false }
+
 // Mappature: originale (flat) e risolta per visualizzazione
 const csvMapping = ref({ document: {}, image: {} })
 const resolvedFlat = reactive({ document: {}, image: {} })
