@@ -7,8 +7,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   selectOutputFolder: () => ipcRenderer.invoke('dialog:openOutputFolder'),
 
-  processImages: (dir, outputDir = null, maxCsvLine = null, crop = true, csvMapping) =>
-    ipcRenderer.invoke('process:images', dir, outputDir, maxCsvLine, crop, csvMapping),
+  processImages: (dir, outputDir = null, maxCsvLine = null, crop = true, csvMapping, optimizeVideos = false) =>
+    ipcRenderer.invoke('process:images', dir, outputDir, maxCsvLine, crop, csvMapping, optimizeVideos),
 
   stopProcessing: () => ipcRenderer.send('process:stop'),
 

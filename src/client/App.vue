@@ -21,6 +21,14 @@
       <label class="form-check-label" for="cropCheckbox">Abilita crop immagini</label>
     </div>
 
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="checkbox" id="optimizeVideosCheckbox" v-model="optimizeVideos" />
+      <label class="form-check-label" for="optimizeVideosCheckbox">
+        Ottimizza video (richiede FFmpeg)
+        <small class="text-muted d-block">Se disabilitato, i video verranno solo copiati</small>
+      </label>
+    </div>
+
     <div class="mb-3" v-if="showCsvInput">
       <label class="form-label">
         Fermati alla riga CSV n°:
@@ -155,6 +163,7 @@ import { ref, reactive, computed, watch, onMounted, toRaw } from 'vue';
 const selectedFolder = ref(null)
 const selectedOutput = ref(null)
 const crop = ref(true)
+const optimizeVideos = ref(false)
 const maxCsvLine = ref(null)
 const processing = ref(false)
 const percent = ref(0)
@@ -390,7 +399,8 @@ const unmapped = computed(() => {
         selectedOutput.value,
         maxCsvLine.value,
         crop.value,
-        finalMap
+        finalMap,
+        optimizeVideos.value
       )
       processing.value = false
       loadingText.value = ''

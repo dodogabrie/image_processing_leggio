@@ -89,39 +89,4 @@ export function createThumbnailWorker(input, output, alias) {
   });
 }
 
-/**
- * Crea uno ZIP dei contenuti delle directory organizzate tramite un worker Node.js (zip_worker.js).
- * @param {string} organizedDir - Percorso della directory con file organizzati.
- * @param {string} organizedThumbDir - Percorso della directory con miniature organizzate.
- * @param {string} outputZip - Percorso del file ZIP di destinazione.
- * @returns {Promise<void>}
- */
-export function zipWorker(organizedDir, organizedThumbDir, outputZip) {
-  return new Promise((resolve, reject) => {
-    const zipWorkerPath = path.join(__dirname, 'workers', 'zip_worker.js');
-    if (!fsSync.existsSync(zipWorkerPath)) {
-      return reject(new Error(`Zip worker non trovato: ${zipWorkerPath}`));
-    }
-    const child = fork(
-      zipWorkerPath,
-      [organizedDir, organizedThumbDir, outputZip],
-      {
-        execPath: process.env.NODE_ENV === 'development' ? 'node' : process.execPath,
-        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-        windowsHide: true,
-      }
-    );
 
-    // Forward stdout/stderr to the main process's stdout/stderr
-    child.stdout.on('data', chunk => process.stdout.write(chunk.toString()));
-    child.stderr.on('data', chunk => process.stderr.write(chunk.toString()));
-
-    // Gestione chiusura del worker
-    child.on('exit', code => {
-      if (code === 0) {
-        return resolve();
-      }
-      reject(new Error(`zip_worker exited with code ${code}`));
-    });
-  });
-}

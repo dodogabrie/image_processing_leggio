@@ -35,12 +35,16 @@
       {
         "from": "public",
         "to": "public",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "build-venv",
         "to": "venv",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asarUnpack": [
@@ -79,11 +83,11 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",
-    "cross-env": "^7.0.3",
     "concurrently": "^8.2.1",
+    "cross-env": "^7.0.3",
     "electron": "^35.2.1",
     "electron-builder": "^26.0.12",
-    "wait-on": "^7.0.1",
-    "vite": "^7.0.6"
+    "vite": "^7.0.6",
+    "wait-on": "^7.0.1"
   }
 }

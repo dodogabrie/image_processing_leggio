@@ -8,192 +8,273 @@ import Logger from '../Logger.js';
 
 const logger = new Logger();
 
-// Campi speciali che non devono essere processati per le lingue
-const SPECIAL_FIELDS = ['identifier', 'groupBy', 'active', 'date', 'language', 'metadata_available', 'metadata_just_year'];
+// =============================================================================
+// CONSTANTS & CONFIGURATION
+// =============================================================================
+
+const SPECIAL_FIELDS = [
+  'identifier', 'groupBy', 'active', 'date', 
+  'language', 'metadata_available', 'metadata_just_year'
+];
+
+const THUMBNAIL_TYPES = ['low_quality', 'gallery'];
+
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
 
 /**
- * Flattens a nested mapping object into flat key paths.
- * @param {{ document: Object, image: Object }} mapping - Nested mapping
- * @returns {{ document: Record<string,string>, image: Record<string,string> }} - Flat mapping
+ * Appiattisce un mapping nested in chiavi flat
  */
 function flattenMapping(mapping) {
-  const out = { document: {}, image: {} };
+  const result = { document: {}, image: {} };
+  
   for (const section of ['document', 'image']) {
-    const secObj = mapping[section] || {};
-    for (const [key, val] of Object.entries(secObj)) {
-      if (val != null && typeof val === 'object' && !Array.isArray(val)) {
-        for (const [subKey, subVal] of Object.entries(val)) {
-          out[section][`${key}.${subKey}`] = String(subVal ?? '').trim();
+    const sectionData = mapping[section] || {};
+    
+    for (const [key, value] of Object.entries(sectionData)) {
+      if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+        // Nested object: flatten con dot notation
+        for (const [subKey, subValue] of Object.entries(value)) {
+          result[section][`${key}.${subKey}`] = String(subValue ?? '').trim();
         }
       } else {
-        out[section][key] = String(val ?? '').trim();
+        // Simple value
+        result[section][key] = String(value ?? '').trim();
       }
     }
   }
-  return out;
+  
+  return result;
 }
 
 /**
- * Estrae valori multi-lingua da un record, raggruppandoli per prefisso
- * @param {Object} record - Il record da cui estrarre i valori
- * @param {Array<string>} availableFields - Elenco dei campi disponibili
- * @returns {Object} - Oggetto con valori raggruppati per lingua
- */
-function extractLangValues(record, availableFields) {
-  const langGroups = {};
-  availableFields.forEach(field => {
-    const value = record[field];
-    if (value != null && value !== '') {
-      // Formato con underscore: prefix_lang
-      if (field.includes('_')) {
-        const [prefix, lang] = field.split('_', 2);
-        if (lang) {
-          langGroups[prefix] = langGroups[prefix] || {};
-          langGroups[prefix][lang] = value;
-        }
-      }
-      // Formato con parentesi quadre: prefix[lang]
-      else if (field.includes('[') && field.includes(']')) {
-        const match = field.match(/^(.+)\[([^\]]+)\]$/);
-        if (match) {
-          const [, prefix, lang] = match;
-          langGroups[prefix] = langGroups[prefix] || {};
-          langGroups[prefix][lang] = value;
-        }
-      }
-    }
-  });
-  return langGroups;
-}
-
-/**
- * Builds an index of all .webp files under rootDir for O(1) lookups.
- * @param {string} rootDir - Directory to scan recursively
- * @returns {Promise<Map<string,string>>} - Map from filename to its absolute path
+ * Costruisce un indice di tutti i file .webp per lookup veloce
  */
 async function indexWebpFiles(rootDir) {
-  const map = new Map();
-  async function walk(dir) {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await walk(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith('.webp')) {
-        map.set(entry.name, fullPath);
+  const fileIndex = new Map();
+  
+  async function scanDirectory(directory) {
+    try {
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        const fullPath = path.join(directory, entry.name);
+        
+        if (entry.isDirectory()) {
+          await scanDirectory(fullPath);
+        } else if (entry.isFile() && entry.name.endsWith('.webp')) {
+          fileIndex.set(entry.name, fullPath);
+        }
+      }
+    } catch (error) {
+      logger.warn(`[indexWebpFiles] Cannot scan directory ${directory}: ${error.message}`);
+    }
+  }
+  
+  await scanDirectory(rootDir);
+  logger.info(`[indexWebpFiles] Indexed ${fileIndex.size} .webp files`);
+  return fileIndex;
+}
+
+// =============================================================================
+// MULTI-LANGUAGE SUPPORT
+// =============================================================================
+
+/**
+ * Estrae e raggruppa valori multi-lingua da un record CSV
+ */
+function extractLanguageGroups(record) {
+  const languageGroups = {};
+  
+  for (const [fieldName, value] of Object.entries(record)) {
+    if (!value || value === '') continue;
+    
+    let prefix, language;
+    
+    // Formato: prefix_lang (es: title_en, title_it)
+    if (fieldName.includes('_')) {
+      const parts = fieldName.split('_');
+      if (parts.length >= 2) {
+        language = parts[parts.length - 1];
+        prefix = parts.slice(0, -1).join('_');
       }
     }
-  }
-  await walk(rootDir);
-  return map;
-}
-
-/**
- * Helper to build a field value, handling special fields and multi-language groups.
- * @param {Object} record - CSV row object
- * @param {string} headerName - Column name in CSV
- * @param {string} key - Internal mapping key
- * @returns {string|Object} - Single string or nested language object
- */
-function buildField(record, headerName, key) {
-  // Special fields bypass language grouping
-  if (SPECIAL_FIELDS.includes(key)) {
-    const raw = record[headerName] ?? '';
-    logger.info(`[organizeFromCsv] Special field ${key}: "${raw}"`);
-    return raw;
-  }
-
-  // Determine prefix by stripping [lang] or _lang suffix
-  let prefix = headerName.replace(/\[[^\]]+\]$/, '');
-  if (prefix.includes('_')) {
-    const parts = prefix.split('_');
-    if (parts.length >= 2) prefix = parts.slice(0, -1).join('_');
-  }
-
-  // Extract all language groups from this record
-  const allLang = extractLangValues(record, Object.keys(record));
-  const group = allLang[prefix];
-
-  if (group && Object.keys(group).length > 0) {
-    logger.info(`[organizeFromCsv] Multi-lang field ${key}: ${JSON.stringify(group)}`);
-    return group;
-  }
-
-  // Fallback to raw string
-  const single = record[headerName] ?? '';
-  logger.info(`[organizeFromCsv] Single-lang field ${key}: "${single}"`);
-  return single;
-}
-
-/**
- * Recursively searches for un file con il nome dato in rootDir.
- * (Maintained for backward compatibility but not used in main flow)
- * @param {string} rootDir
- * @param {string} fileName
- * @returns {Promise<string|null>}
- */
-async function findFileRecursive(rootDir, fileName) {
-  if (typeof rootDir !== 'string' || typeof fileName !== 'string') {
-    throw new TypeError('Invalid arguments to findFileRecursive');
-  }
-  const entries = await fs.readdir(rootDir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(rootDir, entry.name);
-    if (entry.isDirectory()) {
-      const found = await findFileRecursive(fullPath, fileName);
-      if (found) return found;
-    } else if (entry.isFile() && entry.name === fileName) {
-      return fullPath;
+    
+    // Formato: prefix[lang] (es: title[en], title[it])
+    else if (fieldName.includes('[') && fieldName.includes(']')) {
+      const match = fieldName.match(/^(.+)\[([^\]]+)\]$/);
+      if (match) {
+        prefix = match[1];
+        language = match[2];
+      }
+    }
+    
+    if (prefix && language) {
+      if (!languageGroups[prefix]) {
+        languageGroups[prefix] = {};
+      }
+      languageGroups[prefix][language] = value;
     }
   }
-  return null;
+  
+  return languageGroups;
 }
 
 /**
- * Reads le intestazioni (prima riga) di un file CSV.
- * @param {string} csvPath
- * @returns {Promise<string[]>}
+ * Costruisce il valore di un campo, gestendo multi-lingua e campi speciali
+ */
+function buildFieldValue(record, csvColumnName, mappingKey) {
+  // I campi speciali non supportano multi-lingua
+  if (SPECIAL_FIELDS.includes(mappingKey)) {
+    return record[csvColumnName] ?? '';
+  }
+  
+  // Determina il prefisso rimuovendo suffissi di lingua
+  let prefix = csvColumnName.replace(/\[[^\]]+\]$/, ''); // Rimuove [lang]
+  if (prefix.includes('_')) {
+    const parts = prefix.split('_');
+    if (parts.length >= 2) {
+      prefix = parts.slice(0, -1).join('_');
+    }
+  }
+  
+  // Cerca gruppi di lingua per questo prefisso
+  const languageGroups = extractLanguageGroups(record);
+  const languageGroup = languageGroups[prefix];
+  
+  if (languageGroup && Object.keys(languageGroup).length > 0) {
+    return languageGroup; // Restituisce oggetto multi-lingua
+  }
+  
+  // Fallback a valore singolo
+  return record[csvColumnName] ?? '';
+}
+
+// =============================================================================
+// FILE OPERATIONS
+// =============================================================================
+
+/**
+ * Copia un file immagine principale nella cartella di destinazione
+ */
+async function copyMainImage(fileIndex, identifier, sourceDir, destFolder, folderSlug) {
+  const sourceName = `${identifier}.webp`;
+  const sourcePath = fileIndex.get(sourceName);
+  
+  if (!sourcePath) {
+    logger.warn(`[copyMainImage] Image not found: ${sourceName}`);
+    return null;
+  }
+  
+  const destName = `${folderSlug}_${identifier}.webp`;
+  const destPath = path.join(destFolder, destName);
+  
+  try {
+    await fs.copyFile(sourcePath, destPath);
+    logger.info(`[copyMainImage] Copied: ${sourceName} → ${destName}`);
+    return destPath;
+  } catch (error) {
+    logger.error(`[copyMainImage] Failed to copy ${sourceName}: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Copia le miniature associate a un'immagine
+ */
+async function copyThumbnails(webpDir, fileIndex, identifier, thumbDir, folderSlug) {
+  const sourceName = `${identifier}.webp`;
+  const sourcePath = fileIndex.get(sourceName);
+  
+  if (!sourcePath) return;
+  
+  const thumbnailsRoot = path.join(webpDir, 'thumbnails');
+  const relativePath = path.relative(webpDir, path.dirname(sourcePath));
+  const thumbSourceDir = path.join(thumbnailsRoot, relativePath);
+  const thumbDestDir = path.join(thumbDir, folderSlug);
+  
+  await fs.mkdir(thumbDestDir, { recursive: true });
+  
+  for (const type of THUMBNAIL_TYPES) {
+    const thumbName = `${identifier}_${type}.webp`;
+    const thumbSource = path.join(thumbSourceDir, thumbName);
+    const thumbDest = path.join(thumbDestDir, `${folderSlug}_${thumbName}`);
+    
+    try {
+      await fs.copyFile(thumbSource, thumbDest);
+      logger.info(`[copyThumbnails] Copied thumbnail: ${thumbName}`);
+    } catch (error) {
+      logger.warn(`[copyThumbnails] Missing thumbnail ${thumbName}: ${error.code}`);
+    }
+  }
+}
+
+/**
+ * Costruisce i metadati per un record CSV
+ */
+function buildMetadata(record, documentMapping, imageMapping) {
+  const documentFields = {};
+  const imageFields = {};
+  
+  // Costruisci campi documento
+  for (const [mappingKey, csvColumn] of Object.entries(documentMapping)) {
+    documentFields[mappingKey] = buildFieldValue(record, csvColumn, mappingKey);
+  }
+  
+  // Costruisci campi immagine
+  for (const [mappingKey, csvColumn] of Object.entries(imageMapping)) {
+    imageFields[mappingKey] = buildFieldValue(record, csvColumn, mappingKey);
+  }
+  
+  return { documentFields, imageFields };
+}
+
+// =============================================================================
+// PUBLIC API FUNCTIONS
+// =============================================================================
+
+/**
+ * Legge le intestazioni di un file CSV
  */
 export async function getCsvHeaders(csvPath) {
   try {
     const content = await fs.readFile(csvPath);
     const records = parse(content, { skip_empty_lines: true });
-    return records.length ? records[0] : [];
-  } catch (err) {
-    logger.error('[organize_by_csv] Error reading CSV headers:', err.message);
+    return records.length > 0 ? records[0] : [];
+  } catch (error) {
+    logger.error(`[getCsvHeaders] Error reading CSV headers: ${error.message}`);
     return [];
   }
 }
 
 /**
- * Legge una preview di un file CSV con un numero limitato di righe.
- * @param {string} csvPath
- * @param {number} maxRows
- * @returns {Promise<{data: Object[], totalRows: number}>}
+ * Legge una preview di un file CSV
  */
 export async function getCsvPreview(csvPath, maxRows = 10) {
   try {
     const content = await fs.readFile(csvPath);
     const allRecords = parse(content, { columns: true, skip_empty_lines: true });
-    return { data: allRecords.slice(0, maxRows), totalRows: allRecords.length };
-  } catch (err) {
-    logger.error('[organize_by_csv] Error reading CSV preview:', err.message);
+    
+    return {
+      data: allRecords.slice(0, maxRows),
+      totalRows: allRecords.length
+    };
+  } catch (error) {
+    logger.error(`[getCsvPreview] Error reading CSV preview: ${error.message}`);
     return { data: [], totalRows: 0 };
   }
 }
 
 /**
- * Organizza immagini e miniature e genera metadati JSON per ciascuna cartella documento.
- * Ora supporta colonne CSV con suffisso [lang], producendo oggetti nested.
- * Evita lookup ricorsivi ricorrenti costruendo un indice delle immagini.
- * Consolida la logica di estrazione campo in un helper DRY.
- *
- * @param {string} csvPath - Percorso al file CSV di input
- * @param {string} webpDir - Cartella radice con immagini .webp e sottocartella thumbnails/
- * @param {string} outputDir - Cartella dove scrivere i risultati (organized/, organized_thumbnails/)
- * @param {Function} [progressCallback] - Funzione callback({current,total,file,dest})
- * @param {number|null} [maxLine] - Se specificato, numero massimo di righe da processare
- * @param {{ document: Object, image: Object }} mapping - Mapping nested, key interno → nome colonna CSV
+ * Funzione principale per organizzare immagini e metadati da un file CSV
+ * 
+ * @param {string} csvPath - Percorso al file CSV
+ * @param {string} webpDir - Directory contenente le immagini .webp
+ * @param {string} outputDir - Directory di output per i risultati organizzati
+ * @param {Function} progressCallback - Callback per aggiornamenti di progresso
+ * @param {number|null} maxLine - Numero massimo di righe da processare (null = tutte)
+ * @param {Object} mapping - Mapping delle colonne CSV ai campi interni
  */
 export async function organizeFromCsv(
   csvPath,
@@ -203,113 +284,157 @@ export async function organizeFromCsv(
   maxLine = null,
   mapping = {}
 ) {
-  // 1) Flatten mapping per semplificare l'accesso
-  const { document: docMap, image: imgMap } = flattenMapping(mapping);
-
-  // 2) Validazioni input minime
+  logger.info('[organizeFromCsv] Starting CSV organization process');
+  
+  // =============================================================================
+  // VALIDATION & SETUP
+  // =============================================================================
+  
+  // Valida input
   if (!csvPath || !fsSync.existsSync(csvPath)) {
-    return logger.error('[organize_by_csv] Invalid or missing CSV:', csvPath);
+    throw new Error(`CSV file not found: ${csvPath}`);
   }
+  
   if (!webpDir || !fsSync.existsSync(webpDir)) {
-    return logger.error('[organize_by_csv] Invalid or missing webpDir:', webpDir);
+    throw new Error(`WebP directory not found: ${webpDir}`);
   }
+  
   if (!outputDir) {
-    return logger.error('[organize_by_csv] Missing outputDir');
+    throw new Error('Output directory is required');
   }
-  if (!docMap.identifier || !docMap.groupBy) {
-    return logger.error('[organize_by_csv] document.identifier and document.groupBy required');
+  
+  // Prepara il mapping
+  const { document: documentMapping, image: imageMapping } = flattenMapping(mapping);
+  
+  if (!documentMapping.identifier || !documentMapping.groupBy) {
+    throw new Error('document.identifier and document.groupBy are required in mapping');
   }
-
-  // 3) Costruisci indice delle immagini per lookup O(1)
+  
+  logger.info(`[organizeFromCsv] Document mapping: ${JSON.stringify(documentMapping)}`);
+  logger.info(`[organizeFromCsv] Image mapping: ${JSON.stringify(imageMapping)}`);
+  
+  // =============================================================================
+  // FILE INDEX & CSV PARSING
+  // =============================================================================
+  
+  // Costruisci indice delle immagini
+  logger.info('[organizeFromCsv] Building file index...');
   const fileIndex = await indexWebpFiles(webpDir);
-
-  // 4) Lettura e parsing CSV (con colonne come chiavi)
+  
+  // Leggi e parsing del CSV
+  logger.info('[organizeFromCsv] Reading CSV file...');
   let records;
   try {
     const content = await fs.readFile(csvPath);
     records = parse(content, { columns: true, skip_empty_lines: true });
-  } catch (err) {
-    return logger.error('[organize_by_csv] CSV parse error:', err.message);
+  } catch (error) {
+    throw new Error(`CSV parsing failed: ${error.message}`);
   }
+  
+  // Applica limite righe se specificato
   if (maxLine != null) {
-    const n = Number(maxLine);
-    if (!isNaN(n) && n > 0) records = records.slice(0, n);
+    const limit = Number(maxLine);
+    if (!isNaN(limit) && limit > 0) {
+      records = records.slice(0, limit);
+      logger.info(`[organizeFromCsv] Limited to ${limit} records`);
+    }
   }
-  logger.info(`[organize_by_csv] ${records.length} records to process`);
-
-  // 5) Prepara cartelle di output
+  
+  logger.info(`[organizeFromCsv] Processing ${records.length} records`);
+  
+  // =============================================================================
+  // DIRECTORY SETUP
+  // =============================================================================
+  
   const organizedDir = path.join(outputDir, 'organized');
-  const thumbDir     = path.join(outputDir, 'organized_thumbnails');
+  const thumbDir = path.join(outputDir, 'organized_thumbnails');
+  
   await fs.mkdir(organizedDir, { recursive: true });
-  await fs.mkdir(thumbDir,     { recursive: true });
-
-  // 6) Accumulatore metadati
-  const folderData = {};
-  let current = 0;
-
-  // 7) Loop sui record (possibile parallelizzazione futura)
-  for (const row of records) {
-    const groupVal = String(row[docMap.groupBy] || '').trim();
-    if (!groupVal) continue;
-
-    const folderSlug = slugify(groupVal, { lower: true, strict: true });
-    const docFolder = path.join(organizedDir, folderSlug);
-    await fs.mkdir(docFolder, { recursive: true });
-    await fs.mkdir(path.join(thumbDir, folderSlug), { recursive: true });
-
-    // Inizializza entry metadata se prima volta
-    if (!folderData[folderSlug]) {
-      const docFields = {};
-      for (const [key, headerName] of Object.entries(docMap)) {
-        docFields[key] = buildField(row, headerName, key);
+  await fs.mkdir(thumbDir, { recursive: true });
+  
+  // =============================================================================
+  // PROCESS RECORDS
+  // =============================================================================
+  
+  const folderMetadata = {};
+  let processedCount = 0;
+  
+  for (const record of records) {
+    try {
+      // Estrai valori chiave
+      const groupValue = String(record[documentMapping.groupBy] || '').trim();
+      const identifier = String(record[documentMapping.identifier] || '').trim();
+      
+      if (!groupValue || !identifier) {
+        logger.warn(`[organizeFromCsv] Skipping record: missing groupBy(${groupValue}) or identifier(${identifier})`);
+        continue;
       }
-      folderData[folderSlug] = { document: docFields, images: [] };
-    }
-
-    // Copia immagine principale tramite indice
-    const identifier = String(row[docMap.identifier] || '').trim();
-    if (!identifier) continue;
-    const srcName = `${identifier}.webp`;
-    const srcPath = fileIndex.get(srcName);
-    if (!srcPath) continue;
-
-    const destName = `${folderSlug}_${identifier}.webp`;
-    const destPath = path.join(docFolder, destName);
-    await fs.copyFile(srcPath, destPath);
-
-    // Copia miniature (low_quality, gallery) se presenti
-    const thumbsRoot = path.join(webpDir, 'thumbnails');
-    const rel = path.relative(webpDir, path.dirname(srcPath));
-    const thumbSrcDir = path.join(thumbsRoot, rel);
-    for (const alias of ['low_quality', 'gallery']) {
-      const thumbName = `${identifier}_${alias}.webp`;
-      try {
-        await fs.copyFile(
-          path.join(thumbSrcDir, thumbName),
-          path.join(thumbDir, folderSlug, `${folderSlug}_${thumbName}`)
-        );
-      } catch (err) {
-        logger.warn(`[organizeFromCsv] Missing thumbnail ${thumbName}: ${err.code}`);
+      
+      // Crea slug per la cartella
+      const folderSlug = slugify(groupValue, { lower: true, strict: true });
+      const documentFolder = path.join(organizedDir, folderSlug);
+      
+      // Crea cartelle se necessario
+      await fs.mkdir(documentFolder, { recursive: true });
+      
+      // Inizializza metadati cartella se prima volta
+      if (!folderMetadata[folderSlug]) {
+        const { documentFields } = buildMetadata(record, documentMapping, imageMapping);
+        folderMetadata[folderSlug] = {
+          document: documentFields,
+          images: []
+        };
       }
+      
+      // Copia immagine principale
+      const mainImagePath = await copyMainImage(
+        fileIndex, 
+        identifier, 
+        webpDir, 
+        documentFolder, 
+        folderSlug
+      );
+      
+      if (mainImagePath) {
+        // Copia miniature
+        await copyThumbnails(webpDir, fileIndex, identifier, thumbDir, folderSlug);
+        
+        // Aggiungi metadati immagine
+        const { imageFields } = buildMetadata(record, documentMapping, imageMapping);
+        folderMetadata[folderSlug].images.push(imageFields);
+        
+        // Callback di progresso
+        progressCallback({
+          current: processedCount + 1,
+          total: records.length,
+          file: `${identifier}.webp`,
+          dest: mainImagePath
+        });
+      }
+      
+      processedCount++;
+      
+    } catch (error) {
+      logger.error(`[organizeFromCsv] Error processing record ${processedCount}: ${error.message}`);
     }
-
-    // Metadati immagine
-    const imgFields = {};
-    for (const [key, headerName] of Object.entries(imgMap)) {
-      imgFields[key] = buildField(row, headerName, key);
+  }
+  
+  // =============================================================================
+  // WRITE METADATA FILES
+  // =============================================================================
+  
+  logger.info('[organizeFromCsv] Writing metadata files...');
+  
+  for (const [folderSlug, metadata] of Object.entries(folderMetadata)) {
+    const metadataPath = path.join(organizedDir, folderSlug, 'metadata.json');
+    
+    try {
+      await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
+      logger.info(`[organizeFromCsv] Written metadata: ${folderSlug}/metadata.json`);
+    } catch (error) {
+      logger.error(`[organizeFromCsv] Failed to write metadata for ${folderSlug}: ${error.message}`);
     }
-    folderData[folderSlug].images.push(imgFields);
-
-    // Callback di progresso
-    current++;
-    progressCallback({ current, total: records.length, file: srcName, dest: destPath });
   }
-
-  // 8) Scrive JSON metadata per ogni cartella
-  for (const [slug, data] of Object.entries(folderData)) {
-    const jsonPath = path.join(organizedDir, slug, 'metadata.json');
-    await fs.writeFile(jsonPath, JSON.stringify(data, null, 2));
-  }
-
-  logger.info('[organize_by_csv] Organization complete');
+  
+  logger.info(`[organizeFromCsv] Organization complete! Processed ${processedCount} records into ${Object.keys(folderMetadata).length} folders`);
 }

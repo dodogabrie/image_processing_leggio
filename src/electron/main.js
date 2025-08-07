@@ -6,7 +6,7 @@ import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as fsSync from 'fs';
 
-import { processDir } from '../backend/image_processor.js';
+import { processDir } from '../backend/media_processor.js';
 import Logger from '../backend/Logger.js';
 import { getCsvHeaders, getCsvPreview } from '../backend/workers/organize_by_csv.js';
 import { setupPythonEnv } from '../backend/scripts/setup-python.js';
@@ -106,7 +106,7 @@ ipcMain.handle('hasCsvInFolder', async (_e, dir) => {
 /**
  * Handler principale per l'elaborazione delle immagini, CSV e ZIP.
  */
-ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine = null, crop = false, csvMapping = null) => {
+ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine = null, crop = false, csvMapping = null, optimizeVideos = false) => {
   const webContents = event.sender;
   shouldStop = false;
 
@@ -134,7 +134,7 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
       ? path.join(outputDir, baseName)
       : path.join(process.env.HOME || process.env.USERPROFILE, 'output1', baseName);
 
-    // 3) Processa immagini
+    // 3) Processa immagini e video
     logger.info(`[main] Processing images in: ${dir}`);
     await processDir(
       dir,
@@ -145,7 +145,8 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
       () => shouldStop,
       undefined,
       true,
-      crop
+      crop,
+      optimizeVideos
     );
     logger.info(`[main] Images processed successfully in: ${dir}`);
     if (shouldStop) return { success: false, error: "Interrotto dall'utente" };

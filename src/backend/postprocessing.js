@@ -13,6 +13,25 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);const logger = new Logger();
 
 /**
+ * Ricopia ricorsivamente una directory.
+ * @param {string} src - Directory di origine.
+ * @param {string} dest - Directory di destinazione.
+ */
+async function copyDir(src, dest) {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDir(srcPath, destPath);
+    } else {
+      await fs.copyFile(srcPath, destPath);
+    }
+  }
+}
+
+/**
  * Esegue post-processing: ordinamento da CSV (se presente) e creazione ZIP.
  * @param {string} dir - Directory di input (contenente eventuale CSV).
  * @param {string} finalOutput - Directory di output per organizzati e ZIP.
@@ -55,16 +74,61 @@ export async function postProcessResults(
   // 2) Creazione ZIP
   const organizedDir = path.join(finalOutput, 'organized');
   const organizedThumbDir = path.join(finalOutput, 'organized_thumbnails');
+  const thumbnailsDir = path.join(finalOutput, 'thumbnails');
   const outputZip = path.join(finalOutput, 'final_output.zip');
 
+  // Verifica se esistono le directory organizzate
+  let organizedExists = false;
+  let organizedThumbExists = false;
+  
   try {
     await fs.access(organizedDir);
+    organizedExists = true;
+  } catch {}
+  
+  try {
     await fs.access(organizedThumbDir);
-  } catch (err) {
-    const msg = `Directory non trovate per ZIP: ${organizedDir}, ${organizedThumbDir}`;
-    logger.error('[postprocessing]', msg);
-    webContents.send('zip:error', msg);
-    throw new Error(msg);
+    organizedThumbExists = true;
+  } catch {}
+
+  // Se non esistono le cartelle organizzate, le creiamo
+  if (!organizedExists || !organizedThumbExists) {
+    logger.info('[postprocessing] Cartelle organizzate non trovate, creo da contenuto directory');
+    
+    if (!organizedExists) {
+      // Crea organized copiando tutto tranne thumbnails
+      await fs.mkdir(organizedDir, { recursive: true });
+      const entries = await fs.readdir(finalOutput, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        if (entry.name === 'thumbnails' || entry.name === 'organized' || entry.name === 'organized_thumbnails') {
+          continue; // Salta thumbnails e cartelle organizzate
+        }
+        
+        const srcPath = path.join(finalOutput, entry.name);
+        const destPath = path.join(organizedDir, entry.name);
+        
+        if (entry.isDirectory()) {
+          await copyDir(srcPath, destPath);
+        } else {
+          await fs.copyFile(srcPath, destPath);
+        }
+        logger.info(`[postprocessing] Copiato in organized: ${entry.name}`);
+      }
+    }
+    
+    if (!organizedThumbExists) {
+      // Usa la cartella thumbnails esistente come organized_thumbnails
+      try {
+        await fs.access(thumbnailsDir);
+        await fs.rename(thumbnailsDir, organizedThumbDir);
+        logger.info(`[postprocessing] Rinominata ${thumbnailsDir} → ${organizedThumbDir}`);
+      } catch (err) {
+        // Se non esiste thumbnails, crea una cartella vuota
+        await fs.mkdir(organizedThumbDir, { recursive: true });
+        logger.warn(`[postprocessing] Cartella thumbnails non trovata, creata cartella vuota: ${organizedThumbDir}`);
+      }
+    }
   }
 
   const zipWorkerPath = path.join(__dirname, 'workers', 'zip_worker.js');

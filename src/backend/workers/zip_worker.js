@@ -27,6 +27,20 @@ async function copyDir(src, dest) {
 }
 
 /**
+ * Verifica se una directory esiste.
+ * @param {string} dirPath - Percorso della directory.
+ * @returns {boolean} - True se esiste, false altrimenti.
+ */
+async function dirExists(dirPath) {
+  try {
+    const stat = await fs.stat(dirPath);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Punto di ingresso: copia le directory organizzate in un temp, crea lo zip e pulisce.
  */
 async function main() {
@@ -43,16 +57,29 @@ async function main() {
     logger.info(`[zip_worker] Rimuovo temp dir: ${tmp}`);
     await fs.rm(tmp, { recursive: true, force: true });
 
-    // 2. Copio organizedDir in tmp
-    logger.info(`[zip_worker] Copio organizedDir: ${organizedDir} → ${tmp}`);
-    await copyDir(organizedDir, tmp);
+    // 2. Verifico se organizedDir esiste e lo copio
+    const organizedExists = await dirExists(organizedDir);
+    if (organizedExists) {
+      logger.info(`[zip_worker] Copio organizedDir: ${organizedDir} → ${tmp}`);
+      await copyDir(organizedDir, tmp);
+    } else {
+      logger.warn(`[zip_worker] Directory organizzata non trovata: ${organizedDir}, creo directory vuota`);
+      await fs.mkdir(tmp, { recursive: true });
+    }
 
     // 3. Gestisco le thumbnails
+    const thumbnailsExists = await dirExists(organizedThumbDir);
     const thumbnailsDest = path.join(tmp, 'thumbnails');
-    logger.info(`[zip_worker] Rimuovo eventuale thumbnails dest: ${thumbnailsDest}`);
-    await fs.rm(thumbnailsDest, { recursive: true, force: true });
-    logger.info(`[zip_worker] Copio organizedThumbDir: ${organizedThumbDir} → ${thumbnailsDest}`);
-    await copyDir(organizedThumbDir, thumbnailsDest);
+    
+    if (thumbnailsExists) {
+      logger.info(`[zip_worker] Rimuovo eventuale thumbnails dest: ${thumbnailsDest}`);
+      await fs.rm(thumbnailsDest, { recursive: true, force: true });
+      logger.info(`[zip_worker] Copio organizedThumbDir: ${organizedThumbDir} → ${thumbnailsDest}`);
+      await copyDir(organizedThumbDir, thumbnailsDest);
+    } else {
+      logger.warn(`[zip_worker] Directory thumbnails non trovata: ${organizedThumbDir}, creo directory vuota`);
+      await fs.mkdir(thumbnailsDest, { recursive: true });
+    }
 
     // 4. Creo lo zip
     logger.info(`[zip_worker] Inizio creazione ZIP in: ${outputZip}`);
