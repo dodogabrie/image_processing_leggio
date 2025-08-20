@@ -15,7 +15,7 @@
     "serve-electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
     "build": "cross-env NODE_ENV=production vite build && npm run prepare-python && cross-env NODE_ENV=production electron-builder",
     "prepare-python": "node src/backend/scripts/prepare-python-build.js",
-    "start": "cross-env NODE_ENV=production electron ."
+    "start": "concurrently \"npm:serve-vue\" \"npm:serve-electron\""
   },
   "build": {
     "appId": "com.space.imageprocessorleggio",

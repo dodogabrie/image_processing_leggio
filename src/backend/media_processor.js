@@ -113,6 +113,21 @@ async function processInBatches(tasks, maxParallel) {
  * @param {boolean} crop - Se true, esegue anche il crop delle immagini
  * @param {boolean} optimizeVideos - Se true, ottimizza i video invece di copiarli
  */
+// Helper: Recursively count all images in a directory
+async function countAllImages(dir) {
+  let count = 0;
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (EXCLUDED_FOLDERS.some(ex => ex.toLowerCase() === entry.name.toLowerCase())) continue;
+      count += await countAllImages(path.join(dir, entry.name));
+    } else if (/\.(tif|jpe?g|png)$/i.test(entry.name)) {
+      count++;
+    }
+  }
+  return count;
+}
+
 export async function processDir(
   dir,
   progressCallback = () => {},
@@ -127,7 +142,8 @@ export async function processDir(
   errorFiles = null,
   isRoot = true,
   crop = true,
-  optimizeVideos = false
+  optimizeVideos = false,
+  globalStats = null
 ) {
   // =======================
   // INIZIALIZZAZIONE E SCANSIONE CARTELLE
@@ -135,6 +151,10 @@ export async function processDir(
   if (shouldStopFn()) return;
 
   if (!folderInfo) {
+    // Only at the root, count all images for global stats
+    const globalImagesTotal = await countAllImages(baseInput);
+    const globalImagesProcessed = 0;
+    globalStats = { globalImagesTotal, globalImagesProcessed };
     const allFolders = await getAllFolders(baseInput);
     
     // Controlla se la cartella principale contiene immagini
@@ -195,7 +215,9 @@ export async function processDir(
       folderIdx: 0,
       folderTotal: foldersToProcess.length,
       currentFolder: '',
-      currentFile: ''
+      currentFile: '',
+      globalImagesTotal: globalStats.globalImagesTotal,
+      globalImagesProcessed: globalStats.globalImagesProcessed
     });
     errorFiles = [];
   }
@@ -246,7 +268,8 @@ export async function processDir(
       errorFiles,
       false,
       crop,
-      optimizeVideos
+      optimizeVideos,
+      globalStats
     );
   }
 
@@ -313,13 +336,15 @@ export async function processDir(
       }
 
       current++;
-      
+      // Update global processed count
+      if (globalStats) globalStats.globalImagesProcessed++;
+
       // Aggiorna progress della cartella corrente
       if (currentFolderStatus) {
         currentFolderStatus.current = current;
         currentFolderStatus.progress = Math.floor((current / images.length) * 100);
       }
-      
+
       progressCallback({
         type: folderInfo.hasSubfolders ? 'file_progress' : 'main_folder_progress',
         foldersStatus: folderInfo.foldersStatus,
@@ -329,7 +354,9 @@ export async function processDir(
         folderIdx: folderInfo.currentFolderIdx,
         folderTotal: folderInfo.allFolders.length,
         currentFolder: path.basename(dir),
-        currentFile: file
+        currentFile: file,
+        globalImagesTotal: globalStats ? globalStats.globalImagesTotal : undefined,
+        globalImagesProcessed: globalStats ? globalStats.globalImagesProcessed : undefined
       });
     });
 
@@ -361,7 +388,18 @@ export async function processDir(
   // =======================
   if (videos.length) {
     logger.info(`Found ${videos.length} videos in: ${dir}`);
-    
+
+    // Segnale di attesa per processamento video
+    progressCallback({
+      type: 'video_processing',
+      message: 'Attendere, processamento video in corso...',
+      currentFolder: path.basename(dir),
+      videosCount: videos.length,
+      foldersStatus: folderInfo ? folderInfo.foldersStatus : undefined,
+      globalImagesTotal: globalStats ? globalStats.globalImagesTotal : undefined,
+      globalImagesProcessed: globalStats ? globalStats.globalImagesProcessed : undefined
+    });
+
     if (optimizeVideos) {
       // Verifica se FFmpeg è disponibile
       const ffmpegAvailable = await checkFFmpegAvailable();
@@ -371,16 +409,16 @@ export async function processDir(
         throw new Error(errorMsg);
       }
     }
-    
+
     if (optimizeVideos) {
       // Ottimizzazione video con worker paralleli
       const videoTasks = videos.map(file => async () => {
         if (shouldStopFn()) return;
-        
+
         const src = path.join(dir, file);
         const baseName = path.basename(file, path.extname(file));
         const optimizedDest = path.join(outDir, `${baseName}.mp4`);
-        
+
         try {
           // Ottimizza video per il web
           await optimizeVideo(src, optimizedDest, VIDEO_OPTIMIZATION_PROFILES.web);
@@ -406,18 +444,15 @@ export async function processDir(
             }
           });
           logger.info(`Generated video thumbnails: ${baseName}_*.webp`);
-          
+
+          // Copia anche l'originale se richiesto
+          const originalDest = path.join(outDir, file);
+          await fs.copyFile(src, originalDest);
+          logger.info(`Copied original video: ${file}`);
+
         } catch (e) {
           logger.error(`Video processing failed for ${file}: ${e.message}`);
           errorFiles.push(`${src} - Video optimization failed: ${e.message}`);
-
-          // Scrivi un file di log dell'errore nella cartella di output del video
-          try {
-            const logPath = path.join(outDir, `${baseName}_video_error.log`);
-            await fs.writeFile(logPath, `Errore ottimizzazione video per ${file}:\n${e.stack || e.message}`);
-          } catch (logErr) {
-            logger.error(`Impossibile scrivere il log di errore per ${file}: ${logErr.message}`);
-          }
 
           // Fallback: copia solo l'originale
           try {
@@ -429,7 +464,7 @@ export async function processDir(
           }
         }
       });
-      
+
       await processInBatches(videoTasks, Math.min(MAX_PARALLEL, 2)); // Limita video processing
     } else {
       // Copia semplice dei video
@@ -445,6 +480,15 @@ export async function processDir(
         }
       }
     }
+
+    // Segnale: fine processamento video
+    progressCallback({
+      type: 'video_processing_done',
+      currentFolder: path.basename(dir),
+      foldersStatus: folderInfo ? folderInfo.foldersStatus : undefined,
+      globalImagesTotal: globalStats ? globalStats.globalImagesTotal : undefined,
+      globalImagesProcessed: globalStats ? globalStats.globalImagesProcessed : undefined
+    });
   }
 
   // =======================

@@ -75,7 +75,7 @@ export async function postProcessResults(
   const organizedDir = path.join(finalOutput, 'organized');
   const organizedThumbDir = path.join(finalOutput, 'organized_thumbnails');
   const thumbnailsDir = path.join(finalOutput, 'thumbnails');
-  const outputZip = path.join(finalOutput, 'final_output.zip');
+  const outputZip = path.join(finalOutput, 'output.zip');
 
   // Verifica se esistono le directory organizzate
   let organizedExists = false;

@@ -1,5 +1,5 @@
 // preload.cjs
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer , shell} = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
 
@@ -29,4 +29,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readPublicFile: (filename) => ipcRenderer.invoke('public:readFile', filename),
 
   writePublicFile: (filename, content) => ipcRenderer.invoke('public:writeFile', filename, content),
+
+  deletePublicFile: (filename) => ipcRenderer.invoke('public:deleteFile', filename),
+
+  openExternal: (url) => ipcRenderer.invoke('public:openExternal', url)
+
 });

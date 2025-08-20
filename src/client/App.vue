@@ -25,7 +25,17 @@
       <input class="form-check-input" type="checkbox" id="optimizeVideosCheckbox" v-model="optimizeVideos" />
       <label class="form-check-label" for="optimizeVideosCheckbox">
         Ottimizza video (richiede FFmpeg)
-        <small class="text-muted d-block">Se disabilitato, i video verranno solo copiati</small>
+        <small class="text-muted d-block">
+          Se disabilitato, i video verranno solo copiati<br>
+          <a
+            href="#"
+            @click.prevent="openFfmpegGuide"
+            class="text-decoration-underline"
+            style="cursor:pointer"
+          >
+            Come installare FFmpeg su Windows (WikiHow)
+          </a>
+        </small>
       </label>
     </div>
 
@@ -63,6 +73,12 @@
           {{ percent }}%
         </div>
       </div>
+      <div v-if="globalImagesTotal > 0" class="mt-2 text-center text-secondary small">
+        Immagini totali: {{ globalImagesProcessed }} / {{ globalImagesTotal }}
+      </div>
+      <div v-if="videoProcessingMessage" class="alert alert-info mt-2 text-center">
+        {{ videoProcessingMessage }}
+      </div>
     </div>
 
     <!-- Componente progresso cartelle -->
@@ -81,6 +97,9 @@
 
     <!-- Collapsible mapping panel -->
     <div v-if="showMapping" class="mt-4">
+      <!-- Custom CSV Map Loader -->
+      <CustomCsvMapLoader @mapChanged="handleCustomMapChange" class="mb-3" />
+      
       <div class="card">
         <div class="card-header p-0">
           <button
@@ -155,6 +174,7 @@
 // Component imports
 import CsvPreview from './components/CsvPreview.vue';
 import FolderProgress from './components/FolderProgress.vue';
+import CustomCsvMapLoader from './components/CustomCsvMapLoader.vue';
 
 // Framework imports
 import { ref, reactive, computed, watch, onMounted, toRaw } from 'vue';
@@ -162,7 +182,7 @@ import { ref, reactive, computed, watch, onMounted, toRaw } from 'vue';
 // Riferimenti reattivi per stato dell'interfaccia
 const selectedFolder = ref(null)
 const selectedOutput = ref(null)
-const crop = ref(true)
+const crop = ref(false)
 const optimizeVideos = ref(false)
 const maxCsvLine = ref(null)
 const processing = ref(false)
@@ -180,6 +200,9 @@ const csvPreviewSectionExpanded = ref(false)
 // Stato per il progresso delle cartelle
 const foldersStatus = ref([])
 const showFolderProgress = ref(false)
+const globalImagesTotal = ref(0)
+const globalImagesProcessed = ref(0)
+const videoProcessingMessage = ref('')
 
 // Path del file CSV per l'anteprima
 const csvMappingFile = ref('')
@@ -213,6 +236,11 @@ const databaseBridge = ref({ document: {}, image: {} })
      * Appiattisce oggetti annidati di mappatura
      */
     function flattenMap(map) {
+      // Gestisce il caso in cui map sia null o undefined
+      if (!map || typeof map !== 'object') {
+        return { document: {}, image: {} }
+      }
+      
       const out = { document: {}, image: {} }
       for (const sec of ['document', 'image']) {
         Object.entries(map[sec] || {}).forEach(([k, v]) => {
@@ -251,26 +279,34 @@ const databaseBridge = ref({ document: {}, image: {} })
     // Gestione eventi di progresso inviate da Electron
     onMounted(() => {
       window.electronAPI.onProgressUpdate(progress => {
+        // Mostra messaggio di attesa video se presente
+        if (progress.type === 'video_processing') {
+          videoProcessingMessage.value = progress.message || 'Attendere, processamento video in corso...';
+        } else {
+          videoProcessingMessage.value = '';
+        }
+
         loadingText.value = ''
-        
-        if (progress.type === 'folders_init') {
-          // Inizializzazione: mostra sempre il componente (anche senza sottocartelle)
+
+        // Mostra sempre FolderProgress se foldersStatus ha almeno una cartella
+        if (progress.foldersStatus && progress.foldersStatus.length > 0) {
           foldersStatus.value = progress.foldersStatus
           showFolderProgress.value = true
-        } else if (progress.type === 'file_progress' || progress.type === 'main_folder_progress') {
-          // Aggiornamento progresso: aggiorna stato cartelle
-          foldersStatus.value = progress.foldersStatus
         } else {
-          // Vecchio formato: usa barra di progresso classica
           showFolderProgress.value = false
         }
-        
+
+        // Aggiorna sempre la percentuale e il testo di avanzamento
         const { current, total, currentFile, folderIdx, folderTotal, currentFolder } = progress
         if (total) percent.value = Math.floor((current / total) * 100)
         let t = ''
         if (folderIdx && folderTotal && currentFolder) t += `Cartella ${folderIdx} di ${folderTotal}: ${currentFolder}\n`
         if (current != null && total != null && currentFile) t += `File ${current} di ${total}: ${currentFile}`
         progressText.value = t
+
+        // Aggiorna contatore globale immagini
+        if (typeof progress.globalImagesTotal === 'number') globalImagesTotal.value = progress.globalImagesTotal
+        if (typeof progress.globalImagesProcessed === 'number') globalImagesProcessed.value = progress.globalImagesProcessed
       })
       window.electronAPI.onCsvProgress(p => {
         const { current, total, codice } = p
@@ -337,15 +373,68 @@ const resolveMappingWatch = watch(selectedFolder, async folder => {
      }
    })
 
-  // Carica mappa utente di default e appiattiscila
-  let userMap = {}
+  // Carica mappa utente personalizzata o di default
+  await loadCsvMapping()
+
+  showMapping.value = true
+})
+
+// Function to load CSV mapping (custom or default)
+async function loadCsvMapping() {
+  let userMap = { document: {}, image: {} } // Default fallback
+  let mapLoaded = false
+  
   try {
-    userMap = JSON.parse(await window.electronAPI.readPublicFile('default_csv_map.json'))
-  } catch {
-    console.log('Cannot load default CSV map, using empty map')
+    // Prima prova a caricare la mappa personalizzata
+    const customMapContent = await window.electronAPI.readPublicFile('custom_csv_map.json')
+    if (customMapContent && customMapContent.trim()) {
+      userMap = JSON.parse(customMapContent)
+      console.log('✅ Loaded custom CSV map:', userMap)
+      mapLoaded = true
+    } else {
+      console.log('⚠️ Custom CSV map file is empty or returned null')
+    }
+  } catch (error) {
+    console.log('⚠️ Custom CSV map not found or invalid, trying default:', error.message)
+  }
+  
+  if (!mapLoaded) {
+    try {
+      // Se non esiste, carica quella di default
+      const defaultMapContent = await window.electronAPI.readPublicFile('default_csv_map.json')
+      if (defaultMapContent && defaultMapContent.trim()) {
+        userMap = JSON.parse(defaultMapContent)
+        console.log('✅ Loaded default CSV map:', userMap)
+        mapLoaded = true
+      } else {
+        console.log('❌ Default CSV map file is empty or returned null')
+      }
+    } catch (error) {
+      console.log('❌ Cannot load default CSV map:', error.message)
+    }
+  }
+  
+  if (!mapLoaded) {
+    console.log('❌ No CSV map loaded, using empty map')
     userMap = { document: {}, image: {} }
   }
+  
+  // Assicurati che userMap abbia la struttura corretta
+  if (!userMap || typeof userMap !== 'object') {
+    console.log('⚠️ userMap is not an object, resetting to empty map')
+    userMap = { document: {}, image: {} }
+  }
+  if (!userMap.document) {
+    console.log('⚠️ Missing document section, creating empty one')
+    userMap.document = {}
+  }
+  if (!userMap.image) {
+    console.log('⚠️ Missing image section, creating empty one')
+    userMap.image = {}
+  }
+  
   csvMapping.value = flattenMap(userMap)
+  console.log('🔧 Final flattened mapping:', csvMapping.value)
 
   // Risolvi mapping utilizzando solo filteredHeaders per evitare duplicati [lang]
   ;['document', 'image'].forEach(sec => {
@@ -360,9 +449,19 @@ const resolveMappingWatch = watch(selectedFolder, async folder => {
       resolvedFlat[sec][key] = matchHeader
     })
   })
+}
 
-  showMapping.value = true
-})
+// Handle custom map change
+async function handleCustomMapChange(customMap) {
+  if (csvHeaders.value.length > 0) {
+    // Reload mapping if we have CSV headers
+    await loadCsvMapping()
+  }
+}
+
+function openFfmpegGuide() {
+  window.electronAPI.openExternal('https://www.wikihow.it/Installare-FFmpeg-in-Windows')
+}
 
 // Computed unmapped mapping fields
 const unmapped = computed(() => {

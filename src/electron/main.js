@@ -1,6 +1,6 @@
 
 // File: src/main.js
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog , shell } from 'electron';
 import fs from 'fs/promises';
 import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -68,6 +68,20 @@ ipcMain.handle('public:writeFile', async (_e, filename, content) => {
     return { success: true };
   } catch (err) {
     logger.error('[main] public:writeFile error:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// Eliminazione file pubblico
+ipcMain.handle('public:deleteFile', async (_e, filename) => {
+  try {
+    const publicPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'public', filename)
+      : path.join(process.cwd(), 'public', filename);
+    await fs.unlink(publicPath);
+    return { success: true };
+  } catch (err) {
+    logger.error('[main] public:deleteFile error:', err.message);
     return { success: false, error: err.message };
   }
 });
@@ -163,6 +177,16 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
     return { success: true };
   } catch (err) {
     logger.error('[main] process:images error:', err.message);
+    return { success: false, error: err.message || String(err) };
+  }
+});
+
+ipcMain.handle('public:openExternal', async (_e, url) => {
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (err) {
+    logger.error('[main] public:openExternal error:', err.message);
     return { success: false, error: err.message || String(err) };
   }
 });
