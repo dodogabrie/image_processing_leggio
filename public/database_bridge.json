@@ -1,6 +1,7 @@
 {
   "document": {
     "identifier": "Slug univoco generato dal titolo del documento",
+    "origin_folder": "Nome della cartella di origine del documento nell'archivio (può anche essere una sotto cartella)",
     "title": "Titolo completo del documento digitale",
     "groupBy": "Campo che servirà per raggruppare le immagini di un documento sotto la stessa cartella",
     "creator": "Nome dell'autore o fotografo",
@@ -9,7 +10,6 @@
     "date": "Data di creazione o pubblicazione (stringa o null)",
     "document_type": "Tipologia di materiale/documento",
     "periodo": "Periodo cronologico associato al documento",
-    "language": "Codice lingua del documento (es. \"it\")",
     "metadata_available": "Booleano: true se sono disponibili metadata",
     "metadata_just_year": "Booleano: true se la data è solo un anno"
   },

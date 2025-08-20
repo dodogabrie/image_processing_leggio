@@ -1,6 +1,7 @@
 {
   "document": {
     "identifier": "Codice",
+    "origin_folder": null,
     "title": "Titolo",
     "groupBy": "Titolo",
     "creator": "AUTORE",
@@ -9,7 +10,6 @@
     "date": "DATA",
     "document_type": "Materiale",
     "periodo": "PERIODO",
-    "language": "it",
     "metadata_available": true,
     "metadata_just_year": false
   },
