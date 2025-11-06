@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "concurrently \"npm:serve-vue\" \"npm:serve-electron\"",
     "serve-vue": "vite",
-    "serve-electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
+    "serve-electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron . --no-sandbox",
     "build": "cross-env NODE_ENV=production vite build && npm run prepare-python && cross-env NODE_ENV=production electron-builder",
     "prepare-python": "node src/backend/scripts/prepare-python-build.js",
     "start": "concurrently \"npm:serve-vue\" \"npm:serve-electron\""

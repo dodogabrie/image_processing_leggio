@@ -11,7 +11,11 @@
     "document_type": "Tipologia di materiale/documento",
     "periodo": "Periodo cronologico associato al documento",
     "metadata_available": "Booleano: true se sono disponibili metadata",
-    "metadata_just_year": "Booleano: true se la data è solo un anno"
+    "metadata_just_year": "Booleano: true se la data è solo un anno",
+    "archive_path": "Percorso completo dell'archivio (es. 'Archivio/Fondo/SubFondo')",
+    "archive_name": "Nome del livello corrente dell'archivio",
+    "parent_archive": "Nome dell'archivio genitore",
+    "archive_description_prefix": "Prefisso per le colonne CSV contenenti la descrizione multilingua dell'archivio (es. Descrizione Archivio_it)"
   },
   "image": {
     "filename": "Nome del file immagine (senza estensione)",

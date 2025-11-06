@@ -11,7 +11,11 @@
     "document_type": "Materiale",
     "periodo": "PERIODO",
     "metadata_available": true,
-    "metadata_just_year": false
+    "metadata_just_year": false,
+    "archive_path": "Percorso Archivio",
+    "archive_name": "Nome Archivio",
+    "parent_archive": "Archivio Genitore",
+    "archive_description_prefix": "Descrizione Archivio"
   },
   "image": {
     "filename": "Codice",

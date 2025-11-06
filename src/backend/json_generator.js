@@ -6,6 +6,8 @@ import { parse } from 'csv-parse/sync';
 import slugify from 'slugify';
 import Logger from './Logger.js';
 
+import { extractMultiLanguageField } from './scripts/utils.js';
+
 const logger = new Logger();
 
 /**
@@ -82,6 +84,16 @@ export async function generateDocumentJson(organizedDir, csvPath, mapping) {
     docFields.language = 'it';
     docFields.metadata_available = true;
     docFields.metadata_just_year = false;
+
+    // Estrai info archivio
+    const archiveInfo = {
+      path: docFields.archive_path || null,
+      name: docFields.archive_name || null,
+      parent: docFields.parent_archive || null,
+      description: extractMultiLanguageField(row, mapping.document.archive_description_prefix)
+    };
+    docFields.archive = archiveInfo;
+
     docMap.set(String(row[mapping.document.identifier] || '').trim(), docFields);
   }
 

@@ -41,3 +41,25 @@ export async function getAllFolders(rootDir) {
 
   return folders;
 }
+
+/**
+ * Extracts multi-language fields from a CSV record based on a prefix.
+ * @param {Object} record - The CSV record (row).
+ * @param {string} prefix - The prefix for the multi-language columns (e.g., 'archive_description').
+ * @returns {Object} - An object with language codes as keys and the field values as values.
+ */
+export function extractMultiLanguageField(record, prefix) {
+  const multiLanguageFields = {};
+  if (!prefix) {
+    return multiLanguageFields;
+  }
+  for (const [key, value] of Object.entries(record)) {
+    if (key.toLowerCase().startsWith(prefix.toLowerCase())) {
+      const lang = key.substring(prefix.length).replace(/^_/, '');
+      if (lang && value) {
+        multiLanguageFields[lang.toLowerCase()] = value;
+      }
+    }
+  }
+  return multiLanguageFields;
+}

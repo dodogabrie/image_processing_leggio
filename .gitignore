@@ -2,3 +2,14 @@ dist/
 node_modules/
 venv/
 media/
+test_data/
+build-venv/
+*.pyc
+__pycache__/
+.DS_Store
+Thumbs.db
+*.log
+output*/
+finalOutput*/
+organized*/
+*.zip
