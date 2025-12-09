@@ -13,8 +13,9 @@
     "dev": "concurrently \"npm:serve-vue\" \"npm:serve-electron\"",
     "serve-vue": "vite",
     "serve-electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron . --no-sandbox",
-    "build": "cross-env NODE_ENV=production vite build && npm run prepare-python && cross-env NODE_ENV=production electron-builder",
+    "build": "cross-env NODE_ENV=production vite build && npm run prepare-python && npm run prepare-ffmpeg && cross-env NODE_ENV=production electron-builder",
     "prepare-python": "node src/backend/scripts/prepare-python-build.js",
+    "prepare-ffmpeg": "node src/backend/scripts/prepare-ffmpeg-build.js",
     "start": "concurrently \"npm:serve-vue\" \"npm:serve-electron\""
   },
   "build": {
@@ -42,6 +43,13 @@
       {
         "from": "build-venv",
         "to": "venv",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "build-ffmpeg",
+        "to": "ffmpeg",
         "filter": [
           "**/*"
         ]
@@ -73,6 +81,7 @@
   "keywords": [],
   "license": "ISC",
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "archiver": "^7.0.1",
     "bootstrap": "^5.3.6",
     "cli-progress": "^3.12.0",

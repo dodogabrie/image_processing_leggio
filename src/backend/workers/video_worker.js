@@ -3,23 +3,15 @@ import { spawn } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import Logger from '../Logger.js';
+import { getFFmpegPath } from '../utils/ffmpeg-resolver.js';
 
 const logger = new Logger();
 
 /**
- * Trova il comando FFmpeg nel sistema
+ * Trova il comando FFmpeg (usa binario bundled o installato)
  */
 function getFFmpegCommand() {
-  // Prova i path comuni per FFmpeg
-  const possibleCommands = [
-    'ffmpeg',           // PATH di sistema
-    '/usr/bin/ffmpeg',  // Linux standard
-    '/usr/local/bin/ffmpeg', // Linux alternative
-    'C:\\ffmpeg\\bin\\ffmpeg.exe', // Windows common
-    'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe' // Windows Program Files
-  ];
-  
-  return possibleCommands[0]; // Inizia con comando di sistema
+  return getFFmpegPath();
 }
 
 /**

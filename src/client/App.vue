@@ -43,21 +43,21 @@
           <input class="form-check-input" type="radio" name="aggressivity" id="aggressivityLow" value="low" v-model="aggressivity" />
           <label class="form-check-label" for="aggressivityLow">
             Bassa
-            <small class="text-muted d-block">Alta qualità, dimensioni maggiori</small>
+            <small class="text-muted d-block">Bilanciamento qualità/dimensioni</small>
           </label>
         </div>
         <div class="form-check">
           <input class="form-check-input" type="radio" name="aggressivity" id="aggressivityStandard" value="standard" v-model="aggressivity" />
           <label class="form-check-label" for="aggressivityStandard">
             Standard
-            <small class="text-muted d-block">Bilanciamento qualità/dimensioni</small>
+            <small class="text-muted d-block">Compressione buona, file ridotti</small>
           </label>
         </div>
         <div class="form-check">
           <input class="form-check-input" type="radio" name="aggressivity" id="aggressivityHigh" value="high" v-model="aggressivity" />
           <label class="form-check-label" for="aggressivityHigh">
             Alta
-            <small class="text-muted d-block">File più piccoli, qualità ridotta</small>
+            <small class="text-muted d-block">Compressione massima, file molto piccoli</small>
           </label>
         </div>
       </div>
@@ -71,17 +71,9 @@
     <div class="form-check mb-3" v-if="optimizeImages">
       <input class="form-check-input" type="checkbox" id="optimizeVideosCheckbox" v-model="optimizeVideos" />
       <label class="form-check-label" for="optimizeVideosCheckbox">
-        Ottimizza video (richiede FFmpeg)
+        Ottimizza video
         <small class="text-muted d-block">
-          Se disabilitato, i video verranno solo copiati<br>
-          <a
-            href="#"
-            @click.prevent="openFfmpegGuide"
-            class="text-decoration-underline"
-            style="cursor:pointer"
-          >
-            Come installare FFmpeg su Windows (WikiHow)
-          </a>
+          Se disabilitato, i video verranno solo copiati. FFmpeg è incluso nell'applicazione.
         </small>
       </label>
     </div>
@@ -712,10 +704,6 @@ watch(explorerEntries, async (entries) => {
     thumbLoading.value = false
   }
 }, { deep: true })
-
-function openFfmpegGuide() {
-  window.electronAPI.openExternal('https://www.wikihow.it/Installare-FFmpeg-in-Windows')
-}
 
 const loadFolderMetadata = async (dir) => {
   folderMetadata.value = null

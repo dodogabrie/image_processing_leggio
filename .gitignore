@@ -4,6 +4,7 @@ venv/
 media/
 test_data/
 build-venv/
+build-ffmpeg/
 *.pyc
 __pycache__/
 .DS_Store

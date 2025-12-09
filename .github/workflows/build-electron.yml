@@ -56,8 +56,33 @@ jobs:
           name: build-macos-latest
           path: dist/
 
+  build-linux:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Electron app (Linux)
+        run: npm run build
+
+      - name: Upload artifacts (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-linux-latest
+          path: dist/
+
   release:
-      needs: [build, build-mac]
+      needs: [build, build-mac, build-linux]
       runs-on: ubuntu-latest
       steps:
         - name: Download Windows artifact
@@ -65,13 +90,19 @@ jobs:
           with:
             name: build-windows-latest
             path: dist-windows
-  
+
         - name: Download macOS artifact
           uses: actions/download-artifact@v4
           with:
             name: build-macos-latest
             path: dist-macos
-  
+
+        - name: Download Linux artifact
+          uses: actions/download-artifact@v4
+          with:
+            name: build-linux-latest
+            path: dist-linux
+
         - name: Create GitHub Release
           uses: softprops/action-gh-release@v2
           with:
@@ -83,6 +114,8 @@ jobs:
               dist-windows/**/*.exe
               dist-windows/**/*.nsis
               dist-macos/**/*.dmg
+              dist-linux/**/*.AppImage
+              dist-linux/**/*.deb
           env:
             GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 

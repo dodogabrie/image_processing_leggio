@@ -19,12 +19,9 @@ import { cropWorker } from './workers/crop_worker.js';
 import { getAllFolders } from './scripts/utils.js';
 import EXCLUDED_FOLDERS from './scripts/excluded_folders.js';
 import Logger from './Logger.js';
+import { calculateOptimalWorkers, getSystemResources, monitorResources } from './utils/resource-manager.js';
 
 const logger = new Logger();
-
-// Numero massimo di processi paralleli per batch processing
-const total = os.cpus().length;
-const MAX_PARALLEL = 2 //total > 4 ? total - 1 : Math.max(1, Math.floor(total / 2));
 
 // Profili delle thumbnails generate (Base - modificato da aggressivity)
 const THUMBNAIL_ALIASES_BASE = {
@@ -34,24 +31,25 @@ const THUMBNAIL_ALIASES_BASE = {
 
 // Profili di aggressività per qualità immagini
 // Formula base: quality = Math.round(baseline - originalKB / divisor)
+// Shifted to be more aggressive across all modes
 const AGGRESSIVITY_PROFILES = {
   low: {
-    formulaBaseline: 95,      // Starts at higher quality
-    formulaDivisor: 35,       // Slower quality decay with file size
-    thumbnailQualityModifier: 10, // +10 to base quality
-    description: 'Alta qualità, dimensioni maggiori'
-  },
-  standard: {
-    formulaBaseline: 90,      // Current default
-    formulaDivisor: 27.3,     // Current default
-    thumbnailQualityModifier: 0, // no change
+    formulaBaseline: 90,      // Was "standard" - balanced quality/size
+    formulaDivisor: 27.3,
+    thumbnailQualityModifier: 0,
     description: 'Bilanciamento qualità/dimensioni'
   },
+  standard: {
+    formulaBaseline: 80,      // Was "high" - good compression
+    formulaDivisor: 22,
+    thumbnailQualityModifier: -10,  // Slightly reduced from -15
+    description: 'Compressione buona, file ridotti'
+  },
   high: {
-    formulaBaseline: 80,      // Starts at lower quality
-    formulaDivisor: 22,       // Faster quality decay with file size
-    thumbnailQualityModifier: -15, // -15 to base quality
-    description: 'File più piccoli, qualità ridotta'
+    formulaBaseline: 70,      // NEW - extreme compression
+    formulaDivisor: 18,       // Faster quality decay
+    thumbnailQualityModifier: -20, // Heavy thumbnail compression
+    description: 'Compressione massima, file molto piccoli'
   }
 };
 
@@ -77,29 +75,29 @@ function getThumbnailAliases(aggressivity = 'standard') {
 const VIDEO_OPTIMIZATION_PROFILES = {
   web: {
     codec: 'libx264',
-    crf: 23,
+    crf: 28,  // Increased from 23 for better compression (higher = smaller file)
     preset: 'medium',
     maxWidth: 1920,
     maxHeight: 1080,
-    audioBitrate: '128k',
+    audioBitrate: '96k',  // Reduced from 128k for smaller file
     audioCodec: 'aac'
   },
   mobile: {
     codec: 'libx264',
-    crf: 28,
+    crf: 30,  // Even higher compression for mobile
     preset: 'fast',
     maxWidth: 1280,
     maxHeight: 720,
-    audioBitrate: '96k',
+    audioBitrate: '64k',  // Lower bitrate for mobile
     audioCodec: 'aac'
   },
   archive: {
     codec: 'libx265',
-    crf: 28,
+    crf: 30,  // Increased from 28 for better compression
     preset: 'slow',
     maxWidth: 1920,
     maxHeight: 1080,
-    audioBitrate: '128k',
+    audioBitrate: '96k',  // Reduced from 128k
     audioCodec: 'aac'
   }
 };
@@ -186,14 +184,54 @@ export async function processDir(
   optimizeVideos = false,
   globalStats = null,
   previewMode = false,
-  aggressivity = 'standard'
+  aggressivity = 'standard',
+  _depth = 0,
+  _visitedPaths = null
 ) {
   // =======================
   // INIZIALIZZAZIONE E SCANSIONE CARTELLE
   // =======================
   if (shouldStopFn()) return;
 
+  // Protection against circular references and deep recursion
+  const MAX_DEPTH = 50;
+  const MAX_PATH_LENGTH = 3500; // Leave room for output path generation
+
+  // Initialize visited paths tracking on first call
+  if (_visitedPaths === null) {
+    _visitedPaths = new Set();
+  }
+
+  // Check depth limit
+  if (_depth > MAX_DEPTH) {
+    logger.error(`[media_processor] Max depth (${MAX_DEPTH}) exceeded at: ${dir}`);
+    throw new Error(`Maximum folder depth (${MAX_DEPTH}) exceeded. Possible circular reference or excessively nested folders.`);
+  }
+
+  // Check path length
+  if (dir.length > MAX_PATH_LENGTH) {
+    logger.error(`[media_processor] Path too long (${dir.length} chars): ${dir.substring(0, 150)}...`);
+    throw new Error(`Path too long (${dir.length} characters). Maximum allowed is ${MAX_PATH_LENGTH}.`);
+  }
+
+  // Check for circular references
+  const realPath = path.resolve(dir);
+  if (_visitedPaths.has(realPath)) {
+    logger.warn(`[media_processor] Circular reference detected, skipping: ${dir}`);
+    return; // Skip this directory
+  }
+  _visitedPaths.add(realPath);
+
   if (!folderInfo) {
+    // Log system resources at the start of processing
+    const systemResources = getSystemResources();
+    logger.info(`[media_processor] === System Resources ===`);
+    logger.info(`[media_processor] CPU: ${systemResources.cpuCount} cores (${systemResources.cpuModel})`);
+    logger.info(`[media_processor] RAM: ${systemResources.usedMemoryGB}GB / ${systemResources.totalMemoryGB}GB used (${systemResources.memoryUsagePercent}%)`);
+    logger.info(`[media_processor] Free RAM: ${systemResources.freeMemoryGB}GB`);
+    logger.info(`[media_processor] Platform: ${systemResources.platform} ${systemResources.arch}`);
+    logger.info(`[media_processor] ========================`);
+
     // Only at the root, count all images for global stats
     const globalImagesTotal = await countAllImages(baseInput);
     const globalImagesProcessed = 0;
@@ -296,6 +334,37 @@ export async function processDir(
     .filter(e => !e.isDirectory() && /\.xml$/i.test(e.name))
     .map(e => e.name);
 
+  // Calculate average file size for resource optimization
+  let avgImageSizeMB = 0;
+  if (images.length > 0) {
+    try {
+      const sampleSize = Math.min(5, images.length); // Sample first 5 images
+      let totalSize = 0;
+      for (let i = 0; i < sampleSize; i++) {
+        const stats = await fs.stat(path.join(dir, images[i]));
+        totalSize += stats.size;
+      }
+      avgImageSizeMB = (totalSize / sampleSize) / (1024 * 1024);
+    } catch (e) {
+      logger.warn(`[media_processor] Could not calculate avg image size: ${e.message}`);
+    }
+  }
+
+  let avgVideoSizeMB = 0;
+  if (videos.length > 0) {
+    try {
+      const sampleSize = Math.min(3, videos.length); // Sample first 3 videos
+      let totalSize = 0;
+      for (let i = 0; i < sampleSize; i++) {
+        const stats = await fs.stat(path.join(dir, videos[i]));
+        totalSize += stats.size;
+      }
+      avgVideoSizeMB = (totalSize / sampleSize) / (1024 * 1024);
+    } catch (e) {
+      logger.warn(`[media_processor] Could not calculate avg video size: ${e.message}`);
+    }
+  }
+
   // =======================
   // RICORSIONE SU SOTTOCARTELLE
   // =======================
@@ -329,7 +398,9 @@ export async function processDir(
         optimizeVideos,
         globalStats,
         previewMode,
-        aggressivity
+        aggressivity,
+        _depth + 1,
+        _visitedPaths
       );
     }
   }
@@ -352,31 +423,28 @@ export async function processDir(
 
     logger.info(`Found ${images.length} images in: ${dir}, processing ${imagesToProcess.length}`);
 
-    // Skip if no images to process
-    if (imagesToProcess.length === 0) {
-      return;
-    }
+    // Only process images if there are any to process
+    if (imagesToProcess.length > 0) {
+      let current = 0;
 
-    let current = 0;
-
-    // Aggiorna il totale per questa cartella
-    if (currentFolderStatus) {
-      currentFolderStatus.total = imagesToProcess.length;
-      currentFolderStatus.current = 0;
-    }
-
-    const thumbsBaseCrop = path.join(baseOutput, 'thumbnails', relativePath);
-    const thumbsBase     = path.join(baseOutput, 'thumbnails', relativePath);
-    await fs.mkdir(thumbsBaseCrop, { recursive: true });
-    if (thumbsBase !== thumbsBaseCrop) {
-      try {
-        await fs.mkdir(thumbsBase, { recursive: true });
-      } catch (e) {
-        if (e.code !== 'EEXIST') throw e;
+      // Aggiorna il totale per questa cartella
+      if (currentFolderStatus) {
+        currentFolderStatus.total = imagesToProcess.length;
+        currentFolderStatus.current = 0;
       }
-    }
 
-    const tasks = imagesToProcess.map(file => async () => {
+      const thumbsBaseCrop = path.join(baseOutput, 'thumbnails', relativePath);
+      const thumbsBase     = path.join(baseOutput, 'thumbnails', relativePath);
+      await fs.mkdir(thumbsBaseCrop, { recursive: true });
+      if (thumbsBase !== thumbsBaseCrop) {
+        try {
+          await fs.mkdir(thumbsBase, { recursive: true });
+        } catch (e) {
+          if (e.code !== 'EEXIST') throw e;
+        }
+      }
+
+      const tasks = imagesToProcess.map(file => async () => {
       if (shouldStopFn()) return;
       const src  = path.join(dir, file);
       const dest = path.join(outDir, file.replace(/\.\w+$/, '.webp'));
@@ -450,15 +518,25 @@ export async function processDir(
         globalImagesTotal: globalStats ? globalStats.globalImagesTotal : undefined,
         globalImagesProcessed: globalStats ? globalStats.globalImagesProcessed : undefined
       });
-    });
+      });
 
-    await processInBatches(tasks, MAX_PARALLEL);
-    
-    // Segna cartella come completata
-    if (currentFolderStatus) {
-      currentFolderStatus.status = 'completed';
-      currentFolderStatus.progress = 100;
-    }
+      // Calculate optimal workers for image processing
+      const imageWorkers = calculateOptimalWorkers({
+        taskType: 'image',
+        avgFileSizeMB: avgImageSizeMB,
+        minWorkers: 1,
+        maxWorkers: null
+      });
+
+      logger.info(`[media_processor] Using ${imageWorkers} workers for image processing (avg size: ${avgImageSizeMB.toFixed(1)}MB)`);
+      await processInBatches(tasks, imageWorkers);
+
+      // Segna cartella come completata
+      if (currentFolderStatus) {
+        currentFolderStatus.status = 'completed';
+        currentFolderStatus.progress = 100;
+      }
+    } // End of imagesToProcess.length > 0 check
   }
 
   // =======================
@@ -500,7 +578,7 @@ export async function processDir(
       // Verifica se FFmpeg è disponibile
       const ffmpegAvailable = await checkFFmpegAvailable();
       if (!ffmpegAvailable) {
-        const errorMsg = 'FFmpeg non è installato nel sistema. Per l\'ottimizzazione video è necessario installare FFmpeg. Visita https://ffmpeg.org/download.html per le istruzioni di installazione.';
+        const errorMsg = 'FFmpeg non è disponibile. L\'applicazione include FFmpeg integrato, ma non è stato possibile avviarlo. Prova a reinstallare l\'applicazione.';
         logger.error(`[media_processor] ${errorMsg}`);
         throw new Error(errorMsg);
       }
@@ -541,10 +619,7 @@ export async function processDir(
           });
           logger.info(`Generated video thumbnails: ${baseName}_*.webp`);
 
-          // Copia anche l'originale se richiesto
-          const originalDest = path.join(outDir, file);
-          await fs.copyFile(src, originalDest);
-          logger.info(`Copied original video: ${file}`);
+          // Don't copy the original - we only keep the optimized MP4
 
         } catch (e) {
           logger.error(`Video processing failed for ${file}: ${e.message}`);
@@ -561,7 +636,16 @@ export async function processDir(
         }
       });
 
-      await processInBatches(videoTasks, Math.min(MAX_PARALLEL, 2)); // Limita video processing
+      // Calculate optimal workers for video processing
+      const videoWorkers = calculateOptimalWorkers({
+        taskType: 'video',
+        avgFileSizeMB: avgVideoSizeMB,
+        minWorkers: 1,
+        maxWorkers: 3 // Videos are very resource-intensive, cap at 3
+      });
+
+      logger.info(`[media_processor] Using ${videoWorkers} workers for video processing (avg size: ${avgVideoSizeMB.toFixed(1)}MB)`);
+      await processInBatches(videoTasks, videoWorkers);
     } else {
       // Copia semplice dei video
       for (const file of videos) {
