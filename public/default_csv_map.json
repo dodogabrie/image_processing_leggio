@@ -1,50 +1,20 @@
 {
   "document": {
-    "identifier": "Codice",
-    "origin_folder": null,
+    "identifier": "INVENTARIO",
+    "groupBy": "INVENTARIO",
     "title": "Titolo",
-    "groupBy": "Titolo",
-    "creator": "AUTORE",
-    "active": "MOSTRARE NEL LEGGIO",
-    "tags": "CATEGORIA",
-    "date": "DATA",
-    "document_type": "Materiale",
-    "periodo": "PERIODO",
-    "metadata_available": true,
-    "metadata_just_year": false,
-    "archive_path": "Percorso Archivio",
-    "archive_name": "Nome Archivio",
-    "parent_archive": "Archivio Genitore",
-    "archive_description_prefix": "Descrizione Archivio"
+    "creator": "Autore",
+    "publisher": "Editore",
+    "date": "Anno",
+    "luogo_pubblicazione": "Luogo",
+    "archive_path": "Libri Macchiaioli",
+    "active": "SÌ",
+    "tags": "libri,macchiaioli",
+    "document_type": "Libro"
   },
   "image": {
-    "filename": "Codice",
-    "filepath": "",
+    "filename": "INVENTARIO",
     "sequence_number": "1",
-    "nomenclature": "Soggetto",
-    "usage": "master",
-    "code": "Codice",
-    "md5": "",
-    "filesize": "",
-    "image_dimensions": {
-      "length": "",
-      "width": ""
-    },
-    "image_metrics": {
-      "sampling_frequency_unit": "",
-      "sampling_frequency_plane": "",
-      "x_sampling_frequency": "",
-      "y_sampling_frequency": "",
-      "photometric_interpretation": "",
-      "bit_per_sample": ""
-    },
-    "format": {
-      "name": "JPEG",
-      "mime": "image/jpeg",
-      "compression": "lossy"
-    },
-    "datetime_created": "DATA",
-    "rich_description_prefix": "DIDASCALIA PER LEGGIO",
-    "active": "MOSTRARE NEL LEGGIO"
+    "active": "SÌ"
   }
 }

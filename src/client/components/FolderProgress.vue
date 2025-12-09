@@ -17,13 +17,22 @@
             <span class="visually-hidden">Elaborazione in corso...</span>
           </div>
         </div>
-        <div>
+        <div class="flex-grow-1">
           <div class="fw-bold">
             {{ getGlobalProgressTitle() }}
           </div>
           <div class="text-muted small">
             {{ getGlobalProgressSubtitle() }}
           </div>
+        </div>
+        <!-- Live thumbnail preview -->
+        <div v-if="thumbnailDataUrl" class="thumbnail-preview ms-3">
+          <img
+            :src="thumbnailDataUrl"
+            alt="Anteprima immagine corrente"
+            class="thumbnail-image"
+          />
+          <div class="thumbnail-label">Anteprima corrente</div>
         </div>
       </div>
     </div>
@@ -95,14 +104,42 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   foldersStatus: {
     type: Array,
     default: () => []
+  },
+  currentThumbnail: {
+    type: String,
+    default: ''
   }
 })
+
+// Store the base64 data URL for the thumbnail
+const thumbnailDataUrl = ref('')
+
+// Watch for thumbnail changes and fetch as base64
+watch(() => props.currentThumbnail, async (newThumbnail) => {
+  if (!newThumbnail) {
+    thumbnailDataUrl.value = ''
+    return
+  }
+
+  try {
+    const dataUrl = await window.electronAPI.readThumbnailAsDataUrl(newThumbnail)
+    if (dataUrl) {
+      thumbnailDataUrl.value = dataUrl
+    } else {
+      console.warn('Failed to load thumbnail:', newThumbnail)
+      thumbnailDataUrl.value = ''
+    }
+  } catch (err) {
+    console.error('Error loading thumbnail:', err)
+    thumbnailDataUrl.value = ''
+  }
+}, { immediate: true })
 
 // Calcolo offset per progress ring
 const circleOffset = (progress) => {
@@ -130,8 +167,8 @@ const shouldShowGlobalProgress = computed(() =>
   hasProcessing.value || hasCompleted.value || props.foldersStatus.length === 1
 )
 
-const shouldShowFoldersGrid = computed(() => 
-  props.foldersStatus.length > 1
+const shouldShowFoldersGrid = computed(() =>
+  props.foldersStatus.length >= 1
 )
 
 // Metodi per i titoli dinamici
@@ -396,20 +433,60 @@ const getGlobalProgressSubtitle = () => {
   background: linear-gradient(135deg, #495057 0%, #343a40 100%);
 }
 
+/* Thumbnail preview styles */
+.thumbnail-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.thumbnail-image {
+  max-width: 150px;
+  max-height: 120px;
+  border-radius: 8px;
+  border: 2px solid #0d6efd;
+  box-shadow: 0 4px 8px rgba(13, 110, 253, 0.3);
+  object-fit: cover;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.thumbnail-label {
+  font-size: 0.75rem;
+  color: #6c757d;
+  font-weight: 500;
+  text-align: center;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .folders-grid {
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     gap: 0.75rem;
   }
-  
+
   .folder-item {
     padding: 0.75rem;
     min-height: 100px;
   }
-  
+
   .folder-icon {
     font-size: 2.5rem;
+  }
+
+  .thumbnail-preview {
+    display: none; /* Hide thumbnail on mobile to save space */
   }
 }
 </style>

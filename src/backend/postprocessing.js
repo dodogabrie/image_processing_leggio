@@ -10,7 +10,8 @@ import { organizeFromCsv } from './workers/organize_by_csv.js';
 
 // Shim per __dirname in ES module
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);const logger = new Logger();
+const __dirname = dirname(__filename);
+const logger = new Logger();
 
 /**
  * Ricopia ricorsivamente una directory.
@@ -38,6 +39,7 @@ async function copyDir(src, dest) {
  * @param {number|null} maxCsvLine - Numero massimo di righe CSV da processare.
  * @param {Object|null} csvMapping - Mappatura colonne CSV.
  * @param {Electron.WebContents} webContents - Canale per invio progress log.
+ * @param {string} webpSourceDir - Directory da cui leggere le immagini (può essere diversa da finalOutput se si salta l'ottimizzazione)
  * @throws Error in caso di fallimento.
  */
 export async function postProcessResults(
@@ -45,7 +47,8 @@ export async function postProcessResults(
   finalOutput,
   maxCsvLine = null,
   csvMapping = null,
-  webContents
+  webContents,
+  webpSourceDir = finalOutput
 ) {
   // 1) Organizza da CSV
   let csvPath = null;
@@ -62,7 +65,7 @@ export async function postProcessResults(
     logger.info(`[postprocessing] CSV trovato: ${csvPath}`);
     await organizeFromCsv(
       csvPath,
-      finalOutput,
+      webpSourceDir,
       finalOutput,
       csvProgress => webContents.send('csv:progress', csvProgress),
       maxCsvLine,
@@ -98,14 +101,14 @@ export async function postProcessResults(
     if (!organizedExists) {
       // Crea organized copiando tutto tranne thumbnails
       await fs.mkdir(organizedDir, { recursive: true });
-      const entries = await fs.readdir(finalOutput, { withFileTypes: true });
+      const entries = await fs.readdir(webpSourceDir, { withFileTypes: true });
       
       for (const entry of entries) {
         if (entry.name === 'thumbnails' || entry.name === 'organized' || entry.name === 'organized_thumbnails') {
           continue; // Salta thumbnails e cartelle organizzate
         }
         
-        const srcPath = path.join(finalOutput, entry.name);
+        const srcPath = path.join(webpSourceDir, entry.name);
         const destPath = path.join(organizedDir, entry.name);
         
         if (entry.isDirectory()) {
@@ -173,4 +176,3 @@ export async function postProcessResults(
     });
   });
 }
-

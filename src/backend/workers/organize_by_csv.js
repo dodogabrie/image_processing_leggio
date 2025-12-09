@@ -26,6 +26,9 @@ const SPECIAL_FIELDS = [
  */
 const THUMBNAIL_TYPES = ['low_quality', 'gallery'];
 
+// Estensioni immagini supportate (per modalità senza ottimizzazione)
+const IMAGE_EXTENSIONS = ['.webp', '.tif', '.tiff', '.jpg', '.jpeg', '.png'];
+
 // =============================================================================
 /**
  * NOTE DI FUNZIONAMENTO SU origin_folder
@@ -71,11 +74,10 @@ function flattenMapping(mapping) {
 }
 
 /**
- * Costruisce un indice di tutti i file .webp (chiave = nome file, valore = path completo)
- * NOTA: se esistono duplicati con lo stesso nome in cartelle diverse, l'ultimo sovrascrive i precedenti.
- * Questo è accettabile SOLO quando non viene passato origin_folder.
+ * Costruisce un indice di tutti i file immagine supportati (chiave = basename, valore = info path/estensione)
+ * NOTA: se esistono duplicati con lo stesso basename in cartelle diverse, l'ultimo sovrascrive i precedenti.
  */
-async function indexWebpFiles(rootDir) {
+async function indexImageFiles(rootDir) {
   const fileIndex = new Map();
 
   async function scanDirectory(directory) {
@@ -87,18 +89,43 @@ async function indexWebpFiles(rootDir) {
 
         if (entry.isDirectory()) {
           await scanDirectory(fullPath);
-        } else if (entry.isFile() && entry.name.endsWith('.webp')) {
-          fileIndex.set(entry.name, fullPath);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (!IMAGE_EXTENSIONS.includes(ext)) continue;
+
+          const base = path.basename(entry.name, ext);
+          fileIndex.set(base, {
+            path: fullPath,
+            ext,
+            relativeDir: path.dirname(path.relative(rootDir, fullPath))
+          });
         }
       }
     } catch (error) {
-      logger.warn(`[indexWebpFiles] Cannot scan directory ${directory}: ${error.message}`);
+      logger.warn(`[indexImageFiles] Cannot scan directory ${directory}: ${error.message}`);
     }
   }
 
   await scanDirectory(rootDir);
-  logger.info(`[indexWebpFiles] Indexed ${fileIndex.size} .webp files`);
+  logger.info(`[indexImageFiles] Indexed ${fileIndex.size} image files`);
   return fileIndex;
+}
+
+/**
+ * Trova un'immagine nella cartella specificata provando tutte le estensioni supportate.
+ */
+function findImageInDir(dir, identifier) {
+  for (const ext of IMAGE_EXTENSIONS) {
+    const candidate = path.join(dir, `${identifier}${ext}`);
+    if (fsSync.existsSync(candidate)) {
+      return {
+        path: candidate,
+        ext,
+        relativeDir: path.dirname(path.relative(dir, candidate))
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -247,35 +274,29 @@ async function copyMainImage({
   folderSlug,
   originDir // string|null
 }) {
-  const sourceName = `${identifier}.webp`;
-  let sourcePath = null;
+  const sourceInfo = originDir
+    ? findImageInDir(originDir, identifier)
+    : fileIndex.get(identifier);
 
-  if (originDir) {
-    const candidate = path.join(originDir, sourceName);
-    if (fsSync.existsSync(candidate)) {
-      sourcePath = candidate;
-    } else {
-      logger.error(`[copyMainImage] Image not found in origin_folder: ${candidate}`);
-      return null; // secondo i requisiti, se origin_folder è presente ma il file manca → errore per il record
-    }
-  } else {
-    // Fallback al comportamento precedente (indice globale)
-    sourcePath = fileIndex.get(sourceName);
-    if (!sourcePath) {
-      logger.warn(`[copyMainImage] Image not found: ${sourceName}`);
-      return null;
-    }
+  if (!sourceInfo) {
+    logger.warn(
+      `[copyMainImage] Image not found for identifier "${identifier}"${
+        originDir ? ` in origin_folder ${originDir}` : ''
+      }`
+    );
+    return null;
   }
 
-  const destName = `${folderSlug}_${identifier}.webp`;
+  const destExt = sourceInfo.ext || path.extname(sourceInfo.path) || '.webp';
+  const destName = `${folderSlug}_${identifier}${destExt}`;
   const destPath = path.join(destFolder, destName);
 
   try {
-    await fs.copyFile(sourcePath, destPath);
-    logger.info(`[copyMainImage] Copied: ${sourceName} → ${destName}`);
+    await fs.copyFile(sourceInfo.path, destPath);
+    logger.info(`[copyMainImage] Copied: ${path.basename(sourceInfo.path)} → ${destName}`);
     return destPath;
   } catch (error) {
-    logger.error(`[copyMainImage] Failed to copy ${sourceName}: ${error.message}`);
+    logger.error(`[copyMainImage] Failed to copy ${path.basename(sourceInfo.path)}: ${error.message}`);
     return null;
   }
 }
@@ -293,26 +314,18 @@ async function copyThumbnails({
   folderSlug,
   originDir // string|null
 }) {
-  const sourceName = `${identifier}.webp`;
-  let sourcePath = null;
-
-  if (originDir) {
-    const candidate = path.join(originDir, sourceName);
-    if (!fsSync.existsSync(candidate)) {
-      // se manca qui, come sopra, niente thumbnails
-      logger.warn(`[copyThumbnails] Main image missing at origin_folder, cannot copy thumbnails: ${candidate}`);
-      return;
-    }
-    sourcePath = candidate;
-  } else {
-    sourcePath = fileIndex.get(sourceName);
-    if (!sourcePath) {
-      return; // se non abbiamo neanche la principale, usciamo
-    }
+  const sourceInfo = originDir
+    ? findImageInDir(originDir, identifier)
+    : fileIndex.get(identifier);
+  if (!sourceInfo) {
+    logger.warn(`[copyThumbnails] No source image found for ${identifier}, skipping thumbnails`);
+    return;
   }
 
   const thumbnailsRoot = path.join(webpDir, 'thumbnails');
-  const relativePath = path.relative(webpDir, path.dirname(sourcePath));
+  const relativePath = originDir
+    ? path.relative(webpDir, path.dirname(sourceInfo.path))
+    : (sourceInfo.relativeDir || path.relative(webpDir, path.dirname(sourceInfo.path)));
   const thumbSourceDir = path.join(thumbnailsRoot, relativePath);
   const thumbDestDir = path.join(thumbDir, folderSlug);
 
@@ -440,7 +453,7 @@ export async function organizeFromCsv(
 
   // Costruisci indice delle immagini (usato solo quando origin_folder non è fornito)
   logger.info('[organizeFromCsv] Building file index...');
-  const fileIndex = await indexWebpFiles(webpDir);
+  const fileIndex = await indexImageFiles(webpDir);
 
   // Leggi e parsing del CSV
   logger.info('[organizeFromCsv] Reading CSV file...');
@@ -550,10 +563,11 @@ export async function organizeFromCsv(
         folderMetadata[folderSlug].images.push(imageFields);
 
         // Callback di progresso
+        const processedFile = path.basename(mainImagePath);
         progressCallback({
           current: processedCount + 1,
           total: records.length,
-          file: `${identifier}.webp`,
+          file: processedFile,
           dest: mainImagePath
         });
       } else {

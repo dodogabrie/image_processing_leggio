@@ -38,14 +38,15 @@ export function cropPageWorker(input, output, minArea = 200000) {
  * Converte un'immagine in webp tramite un worker Node.js (webp_worker.js).
  * @param {string} input - Percorso file di input.
  * @param {string} output - Percorso file di output.
+ * @param {string} aggressivity - Livello di aggressività ('low', 'standard', 'high').
  * @param {number} retries - Numero di tentativi in caso di errore (default 1).
  * @returns {Promise<void>}
  */
-export function convertWorker(input, output, retries = 1) {
+export function convertWorker(input, output, aggressivity = 'standard', retries = 1) {
   return new Promise((resolve, reject) => {
     const child = fork(
       path.join(__dirname, 'workers', 'webp_worker.js'),
-      [input, output],
+      [input, output, aggressivity],
       {
         execPath: process.env.NODE_ENV === 'development' ? 'node' : process.execPath,
         stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
@@ -56,7 +57,7 @@ export function convertWorker(input, output, retries = 1) {
     child.stderr.on('data', d => process.stderr.write(d.toString()));
     child.on('exit', code => {
       if (code === 0) return resolve();
-      if (retries > 0) return resolve(convertWorker(input, output, retries - 1));
+      if (retries > 0) return resolve(convertWorker(input, output, aggressivity, retries - 1));
       reject(new Error(`worker exited with code ${code}`));
     });
   });

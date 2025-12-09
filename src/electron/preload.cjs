@@ -7,10 +7,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   selectOutputFolder: () => ipcRenderer.invoke('dialog:openOutputFolder'),
 
-  processImages: (dir, outputDir = null, maxCsvLine = null, crop = true, csvMapping, optimizeVideos = false) =>
-    ipcRenderer.invoke('process:images', dir, outputDir, maxCsvLine, crop, csvMapping, optimizeVideos),
+  processImages: (dir, outputDir = null, maxCsvLine = null, crop = true, csvMapping, optimizeVideos = false, optimizeImages = true, previewMode = false, aggressivity = 'standard') =>
+    ipcRenderer.invoke('process:images', dir, outputDir, maxCsvLine, crop, csvMapping, optimizeVideos, optimizeImages, previewMode, aggressivity),
 
   stopProcessing: () => ipcRenderer.send('process:stop'),
+
+  cleanupPreview: (outputDir) => ipcRenderer.invoke('cleanup:preview', outputDir),
 
   onProgressUpdate: callback =>
     ipcRenderer.on('progress:update', (_e, progress) => callback(progress)),
@@ -21,6 +23,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hasCsvInFolder: dir => ipcRenderer.invoke('hasCsvInFolder', dir),
 
   readDir: (dir) => ipcRenderer.invoke('fs:readDir', dir),
+
+  readThumbnailAsDataUrl: (filePath) => ipcRenderer.invoke('fs:readThumbnailAsDataUrl', filePath),
+  readImageAsDataUrl: (filePath) => ipcRenderer.invoke('fs:readImageAsDataUrl', filePath),
+  listEntriesDetailed: (dir, organizedRoot, thumbnailsRoot) => ipcRenderer.invoke('fs:listEntriesDetailed', dir, organizedRoot, thumbnailsRoot),
+  findOriginalMatch: (processedPath, originalRoot) => ipcRenderer.invoke('fs:findOriginalMatch', processedPath, originalRoot),
+  readJsonFile: (filePath) => ipcRenderer.invoke('fs:readJsonFile', filePath),
 
   getCsvHeaders: (csvPath) => ipcRenderer.invoke('csv:getHeaders', csvPath),
 

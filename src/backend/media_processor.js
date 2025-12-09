@@ -24,13 +24,54 @@ const logger = new Logger();
 
 // Numero massimo di processi paralleli per batch processing
 const total = os.cpus().length;
-const MAX_PARALLEL = total > 4 ? total - 1 : Math.max(1, Math.floor(total / 2));
+const MAX_PARALLEL = 2 //total > 4 ? total - 1 : Math.max(1, Math.floor(total / 2));
 
-// Profili delle thumbnails generate
-const THUMBNAIL_ALIASES = {
+// Profili delle thumbnails generate (Base - modificato da aggressivity)
+const THUMBNAIL_ALIASES_BASE = {
   low_quality:  { size: [640, 480],   quality: 75, crop: false, format: 'webp' },
   gallery:      { size: [1920, 1080], quality: 75, crop: false, format: 'webp' }
 };
+
+// Profili di aggressività per qualità immagini
+// Formula base: quality = Math.round(baseline - originalKB / divisor)
+const AGGRESSIVITY_PROFILES = {
+  low: {
+    formulaBaseline: 95,      // Starts at higher quality
+    formulaDivisor: 35,       // Slower quality decay with file size
+    thumbnailQualityModifier: 10, // +10 to base quality
+    description: 'Alta qualità, dimensioni maggiori'
+  },
+  standard: {
+    formulaBaseline: 90,      // Current default
+    formulaDivisor: 27.3,     // Current default
+    thumbnailQualityModifier: 0, // no change
+    description: 'Bilanciamento qualità/dimensioni'
+  },
+  high: {
+    formulaBaseline: 80,      // Starts at lower quality
+    formulaDivisor: 22,       // Faster quality decay with file size
+    thumbnailQualityModifier: -15, // -15 to base quality
+    description: 'File più piccoli, qualità ridotta'
+  }
+};
+
+// Export per uso nei workers
+export { AGGRESSIVITY_PROFILES };
+
+// Funzione per ottenere i profili thumbnail con aggressività applicata
+function getThumbnailAliases(aggressivity = 'standard') {
+  const profile = AGGRESSIVITY_PROFILES[aggressivity] || AGGRESSIVITY_PROFILES.standard;
+  const aliases = {};
+
+  for (const [key, value] of Object.entries(THUMBNAIL_ALIASES_BASE)) {
+    aliases[key] = {
+      ...value,
+      quality: Math.max(20, Math.min(100, value.quality + profile.thumbnailQualityModifier))
+    };
+  }
+
+  return aliases;
+}
 
 // Profili di ottimizzazione video
 const VIDEO_OPTIMIZATION_PROFILES = {
@@ -143,7 +184,9 @@ export async function processDir(
   isRoot = true,
   crop = true,
   optimizeVideos = false,
-  globalStats = null
+  globalStats = null,
+  previewMode = false,
+  aggressivity = 'standard'
 ) {
   // =======================
   // INIZIALIZZAZIONE E SCANSIONE CARTELLE
@@ -154,7 +197,11 @@ export async function processDir(
     // Only at the root, count all images for global stats
     const globalImagesTotal = await countAllImages(baseInput);
     const globalImagesProcessed = 0;
-    globalStats = { globalImagesTotal, globalImagesProcessed };
+    globalStats = {
+      globalImagesTotal,
+      globalImagesProcessed,
+      previewImagesProcessed: 0 // Track preview mode count
+    };
     const allFolders = await getAllFolders(baseInput);
     
     // Controlla se la cartella principale contiene immagini
@@ -252,38 +299,69 @@ export async function processDir(
   // =======================
   // RICORSIONE SU SOTTOCARTELLE
   // =======================
-  for (const sub of dirs) {
-    if (
-      shouldStopFn() ||
-      EXCLUDED_FOLDERS.some(ex => ex.toLowerCase() === sub.toLowerCase())
-    ) continue;
+  // In preview mode, stop recursion if we've already processed 4 images
+  const shouldRecurse = previewMode
+    ? (globalStats && globalStats.previewImagesProcessed < 4)
+    : true;
 
-    await processDir(
-      path.join(dir, sub),
-      progressCallback,
-      baseInput,
-      baseOutput,
-      folderInfo,
-      shouldStopFn,
-      errorFiles,
-      false,
-      crop,
-      optimizeVideos,
-      globalStats
-    );
+  if (shouldRecurse) {
+    for (const sub of dirs) {
+      if (
+        shouldStopFn() ||
+        EXCLUDED_FOLDERS.some(ex => ex.toLowerCase() === sub.toLowerCase())
+      ) continue;
+
+      // In preview mode, stop early if we've hit the limit
+      if (previewMode && globalStats && globalStats.previewImagesProcessed >= 4) {
+        break;
+      }
+
+      await processDir(
+        path.join(dir, sub),
+        progressCallback,
+        baseInput,
+        baseOutput,
+        folderInfo,
+        shouldStopFn,
+        errorFiles,
+        false,
+        crop,
+        optimizeVideos,
+        globalStats,
+        previewMode,
+        aggressivity
+      );
+    }
   }
 
   // =======================
   // PROCESSING IMMAGINI NELLA CARTELLA CORRENTE
   // =======================
-  logger.info(`Processing images in: ${dir}`);
+  logger.info(`Processing images in: ${dir} (preview: ${previewMode}, aggressivity: ${aggressivity})`);
+
+  // Get thumbnail aliases with aggressivity applied
+  const THUMBNAIL_ALIASES = getThumbnailAliases(aggressivity);
+
   if (images.length) {
-    logger.info(`Found ${images.length} images in: ${dir}`);
+    // In preview mode, limit to 4 images total across all folders
+    let imagesToProcess = images;
+    if (previewMode && globalStats) {
+      const remaining = 4 - globalStats.previewImagesProcessed;
+      imagesToProcess = images.slice(0, Math.max(0, remaining));
+    }
+
+    logger.info(`Found ${images.length} images in: ${dir}, processing ${imagesToProcess.length}`);
+
+    // Skip if no images to process
+    if (imagesToProcess.length === 0) {
+      return;
+    }
+
     let current = 0;
 
     // Aggiorna il totale per questa cartella
     if (currentFolderStatus) {
-      currentFolderStatus.total = images.length;
+      currentFolderStatus.total = imagesToProcess.length;
       currentFolderStatus.current = 0;
     }
 
@@ -298,7 +376,7 @@ export async function processDir(
       }
     }
 
-    const tasks = images.map(file => async () => {
+    const tasks = imagesToProcess.map(file => async () => {
       if (shouldStopFn()) return;
       const src  = path.join(dir, file);
       const dest = path.join(outDir, file.replace(/\.\w+$/, '.webp'));
@@ -311,7 +389,8 @@ export async function processDir(
 
       if (!skip) {
         try {
-          await convertWorker(src, dest);
+          // Convert to WebP with aggressivity-based auto-calculation
+          await convertWorker(src, dest, aggressivity);
 
           if (crop) {
             const cropJpgDest  = path.join(thumbsBaseCrop, `${path.basename(dest, '.webp')}_book.jpg`);
@@ -326,10 +405,16 @@ export async function processDir(
         }
       }
 
+      // Generate thumbnails and track the low_quality one for preview
+      let previewThumbnailPath = null;
       for (const alias of Object.keys(THUMBNAIL_ALIASES)) {
         const thumbPath = path.join(thumbsBase, `${path.basename(dest, '.webp')}_${alias}.webp`);
         try {
           await createThumbnailWorker(dest, thumbPath, JSON.stringify(THUMBNAIL_ALIASES[alias]));
+          // Store low_quality thumbnail path for live preview
+          if (alias === 'low_quality') {
+            previewThumbnailPath = thumbPath;
+          }
         } catch (e) {
           errorFiles.push(`${dest} (${alias}) - ${e.message}`);
         }
@@ -337,12 +422,18 @@ export async function processDir(
 
       current++;
       // Update global processed count
-      if (globalStats) globalStats.globalImagesProcessed++;
+      if (globalStats) {
+        globalStats.globalImagesProcessed++;
+        // Track preview mode separately
+        if (previewMode) {
+          globalStats.previewImagesProcessed++;
+        }
+      }
 
       // Aggiorna progress della cartella corrente
       if (currentFolderStatus) {
         currentFolderStatus.current = current;
-        currentFolderStatus.progress = Math.floor((current / images.length) * 100);
+        currentFolderStatus.progress = Math.floor((current / imagesToProcess.length) * 100);
       }
 
       progressCallback({
@@ -350,11 +441,12 @@ export async function processDir(
         foldersStatus: folderInfo.foldersStatus,
         hasSubfolders: folderInfo.hasSubfolders,
         current,
-        total: images.length,
+        total: imagesToProcess.length,
         folderIdx: folderInfo.currentFolderIdx,
         folderTotal: folderInfo.allFolders.length,
         currentFolder: path.basename(dir),
         currentFile: file,
+        currentThumbnail: previewThumbnailPath, // Add thumbnail path for live preview
         globalImagesTotal: globalStats ? globalStats.globalImagesTotal : undefined,
         globalImagesProcessed: globalStats ? globalStats.globalImagesProcessed : undefined
       });
@@ -372,21 +464,25 @@ export async function processDir(
   // =======================
   // COPIA FILE XML (SE PRESENTI)
   // =======================
-  for (const file of xmls) {
-    if (shouldStopFn()) break;
-    const src  = path.join(dir, file);
-    const dest = path.join(outDir, file);
-    try {
-      await fs.copyFile(src, dest);
-    } catch (e) {
-      errorFiles.push(`${src} - ${e.message}`);
+  // Skip XML copying in preview mode
+  if (!previewMode) {
+    for (const file of xmls) {
+      if (shouldStopFn()) break;
+      const src  = path.join(dir, file);
+      const dest = path.join(outDir, file);
+      try {
+        await fs.copyFile(src, dest);
+      } catch (e) {
+        errorFiles.push(`${src} - ${e.message}`);
+      }
     }
   }
 
   // =======================
   // PROCESSING VIDEO (SE PRESENTI)
   // =======================
-  if (videos.length) {
+  // Skip video processing in preview mode
+  if (videos.length && !previewMode) {
     logger.info(`Found ${videos.length} videos in: ${dir}`);
 
     // Segnale di attesa per processamento video
