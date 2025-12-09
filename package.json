@@ -1,6 +1,6 @@
 {
   "name": "electron_image_preprocessing_leggio",
-  "version": "1.0.0",
+  "version": "1.5.6",
   "description": "App for preprocessing images for Leggio project",
   "main": "src/electron/main.js",
   "author": {

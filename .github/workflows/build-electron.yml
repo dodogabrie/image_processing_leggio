@@ -111,11 +111,10 @@ jobs:
             draft: false
             prerelease: false
             files: |
-              dist-windows/**/*.exe
-              dist-windows/**/*.nsis
-              dist-macos/**/*.dmg
-              dist-linux/**/*.AppImage
-              dist-linux/**/*.deb
+              dist-windows/*.exe
+              dist-macos/*.dmg
+              dist-linux/*.AppImage
+              dist-linux/*.deb
           env:
             GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
