@@ -8,9 +8,9 @@
     "date": "Anno",
     "luogo_pubblicazione": "Luogo",
     "archive_path": "Libri Macchiaioli",
-    "active": "SÌ",
-    "tags": "libri,macchiaioli",
-    "document_type": "Libro"
+    "active": "SI",
+    "tags": "",
+    "document_type": "Copertina Libro"
   },
   "image": {
     "filename": "INVENTARIO",
