@@ -1,4 +1,4 @@
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 
 /**
  * Composable per gestire la logica di mappatura CSV → Database
@@ -14,6 +14,23 @@ export function useCsvMapping() {
   const detectedLanguages = reactive({ document: {}, image: {} })// Lingue disponibili per ciascun campo
   const databaseBridge = ref({ document: {}, image: {} })        // Schema descrittivo del DB
   const filteredHeaders = ref([])                                // Una intestazione rappresentativa per base
+
+  // Additional CSV UI state
+  const csvHeaders = ref([])
+  const csvMappingFile = ref('')
+  const showMapping = ref(false)
+  const mappingExpanded = ref(false)
+
+  // Computed: missing CSV columns
+  const missingCsvColumns = computed(() => {
+    return filteredHeaders.value.filter(header => {
+      const mapped = [
+        ...Object.values(resolvedFlat.document),
+        ...Object.values(resolvedFlat.image)
+      ]
+      return header && !mapped.includes(header)
+    })
+  })
 
   /**
    * Restituisce la descrizione di un campo dal bridge JSON
@@ -184,6 +201,13 @@ export function useCsvMapping() {
     detectedLanguages,
     databaseBridge,
     filteredHeaders,
+    csvHeaders,
+    csvMappingFile,
+    showMapping,
+    mappingExpanded,
+
+    // Computed
+    missingCsvColumns,
 
     // Funzioni
     getFieldDescription,

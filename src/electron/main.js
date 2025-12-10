@@ -1,9 +1,9 @@
 
 // File: src/main.js
-import { app, BrowserWindow, ipcMain, dialog , shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'electron';
 import fs from 'fs/promises';
 import path, { dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import * as fsSync from 'fs';
 
 import { processDir } from '../backend/media_processor.js';
@@ -441,7 +441,44 @@ ipcMain.handle('public:openExternal', async (_e, url) => {
 // Stop processing
 ipcMain.on('process:stop', () => { shouldStop = true; });
 
-app.whenReady().then(createWindow);
+// Register custom protocol scheme BEFORE app.whenReady()
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'media-file',
+    privileges: {
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: false,
+      bypassCSP: false
+    }
+  }
+]);
+
+app.whenReady().then(() => {
+  // Register protocol handler for serving media files efficiently
+  protocol.handle('media-file', (request) => {
+    const url = request.url.slice('media-file://'.length);
+    const filePath = decodeURIComponent(url);
+
+    // Security: prevent directory traversal
+    const normalizedPath = path.normalize(filePath);
+    if (normalizedPath.includes('..')) {
+      logger.warn('[main] Rejected media-file request with directory traversal:', filePath);
+      return new Response('Forbidden', { status: 403 });
+    }
+
+    // Security: ensure file exists and is a file (not directory)
+    if (!fsSync.existsSync(normalizedPath) || !fsSync.statSync(normalizedPath).isFile()) {
+      logger.warn('[main] media-file not found or not a file:', normalizedPath);
+      return new Response('Not Found', { status: 404 });
+    }
+
+    // Serve the file using net.fetch with file:// URL
+    return net.fetch(pathToFileURL(normalizedPath).toString());
+  });
+
+  createWindow();
+});
 
 // Gestione eccezioni globali
 process.on('uncaughtException', err => logger.error('[main] Uncaught Exception:', err));
