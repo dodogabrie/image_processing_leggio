@@ -288,7 +288,9 @@ async function copyMainImage({
   }
 
   const destExt = sourceInfo.ext || path.extname(sourceInfo.path) || '.webp';
-  const destName = `${folderSlug}_${identifier}${destExt}`;
+  // Clean identifier for output filename: remove leading underscores to avoid double underscores
+  const cleanIdentifier = identifier.replace(/^_+/, '');
+  const destName = `${folderSlug}_${cleanIdentifier}${destExt}`;
   const destPath = path.join(destFolder, destName);
 
   try {
@@ -331,10 +333,13 @@ async function copyThumbnails({
 
   await fs.mkdir(thumbDestDir, { recursive: true });
 
+  // Clean identifier for output filename: remove leading underscores to avoid double underscores
+  const cleanIdentifier = identifier.replace(/^_+/, '');
+
   for (const type of THUMBNAIL_TYPES) {
-    const thumbName = `${identifier}_${type}.webp`;
+    const thumbName = `${identifier}_${type}.webp`;  // Source uses original identifier
     const thumbSource = path.join(thumbSourceDir, thumbName);
-    const thumbDest = path.join(thumbDestDir, `${folderSlug}_${thumbName}`);
+    const thumbDest = path.join(thumbDestDir, `${folderSlug}_${cleanIdentifier}_${type}.webp`);  // Dest uses clean identifier
 
     try {
       await fs.copyFile(thumbSource, thumbDest);
@@ -496,8 +501,12 @@ export async function organizeFromCsv(
   for (const record of records) {
     try {
       // Estrai valori chiave
-      const groupValue = String(record[documentMapping.groupBy] || '').trim();
-      const identifier = String(record[documentMapping.identifier] || '').trim();
+      // Normalize values: remove any file extension if present (common when identifier/groupBy use filename column)
+      const extensionRegex = /\.(jpg|jpeg|png|tif|tiff|webp)$/i;
+      const rawGroupValue = String(record[documentMapping.groupBy] || '').trim();
+      const groupValue = rawGroupValue.replace(extensionRegex, '');
+      const rawIdentifier = String(record[documentMapping.identifier] || '').trim();
+      const identifier = rawIdentifier.replace(extensionRegex, '');
 
       if (!groupValue || !identifier) {
         logger.warn(`[organizeFromCsv] Skipping record: missing groupBy(${groupValue}) or identifier(${identifier})`);

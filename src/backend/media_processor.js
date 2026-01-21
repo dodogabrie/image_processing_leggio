@@ -477,14 +477,24 @@ export async function processDir(
       let previewThumbnailPath = null;
       for (const alias of Object.keys(THUMBNAIL_ALIASES)) {
         const thumbPath = path.join(thumbsBase, `${path.basename(dest, '.webp')}_${alias}.webp`);
+
+        // Skip if thumbnail already exists
+        let thumbExists = false;
         try {
-          await createThumbnailWorker(dest, thumbPath, JSON.stringify(THUMBNAIL_ALIASES[alias]));
-          // Store low_quality thumbnail path for live preview
-          if (alias === 'low_quality') {
-            previewThumbnailPath = thumbPath;
+          if ((await fs.stat(thumbPath)).size > 0) thumbExists = true;
+        } catch {}
+
+        if (!thumbExists) {
+          try {
+            await createThumbnailWorker(dest, thumbPath, JSON.stringify(THUMBNAIL_ALIASES[alias]));
+          } catch (e) {
+            errorFiles.push(`${dest} (${alias}) - ${e.message}`);
           }
-        } catch (e) {
-          errorFiles.push(`${dest} (${alias}) - ${e.message}`);
+        }
+
+        // Store low_quality thumbnail path for live preview (whether new or existing)
+        if (alias === 'low_quality') {
+          previewThumbnailPath = thumbPath;
         }
       }
 
@@ -593,31 +603,52 @@ export async function processDir(
         const baseName = path.basename(file, path.extname(file));
         const optimizedDest = path.join(outDir, `${baseName}.mp4`);
 
+        // Skip if optimized video already exists
+        let videoExists = false;
         try {
-          // Ottimizza video per il web
-          await optimizeVideo(src, optimizedDest, VIDEO_OPTIMIZATION_PROFILES.web);
-          logger.info(`Optimized video: ${file} → ${baseName}.mp4`);
+          if ((await fs.stat(optimizedDest)).size > 0) videoExists = true;
+        } catch {}
+
+        try {
+          if (!videoExists) {
+            // Ottimizza video per il web
+            await optimizeVideo(src, optimizedDest, VIDEO_OPTIMIZATION_PROFILES.web);
+            logger.info(`Optimized video: ${file} → ${baseName}.mp4`);
+          } else {
+            logger.info(`Skipped video (already exists): ${file}`);
+          }
 
           // Genera thumbnails WebP del video nella cartella thumbnails
           const thumbsVideoDir = path.join(baseOutput, 'thumbnails', relativePath);
           await fs.mkdir(thumbsVideoDir, { recursive: true });
 
-          await generateVideoThumbnails(src, thumbsVideoDir, baseName, {
-            timeOffset: VIDEO_THUMBNAIL_PROFILES.preview.timeOffset,
-            thumbnailProfiles: {
-              low_quality: {
-                width: THUMBNAIL_ALIASES.low_quality.size[0],
-                height: THUMBNAIL_ALIASES.low_quality.size[1],
-                quality: THUMBNAIL_ALIASES.low_quality.quality
-              },
-              gallery: {
-                width: THUMBNAIL_ALIASES.gallery.size[0],
-                height: THUMBNAIL_ALIASES.gallery.size[1],
-                quality: THUMBNAIL_ALIASES.gallery.quality
+          // Check if video thumbnails already exist
+          const lowQualityThumb = path.join(thumbsVideoDir, `${baseName}_low_quality.webp`);
+          let videoThumbsExist = false;
+          try {
+            if ((await fs.stat(lowQualityThumb)).size > 0) videoThumbsExist = true;
+          } catch {}
+
+          if (!videoThumbsExist) {
+            await generateVideoThumbnails(src, thumbsVideoDir, baseName, {
+              timeOffset: VIDEO_THUMBNAIL_PROFILES.preview.timeOffset,
+              thumbnailProfiles: {
+                low_quality: {
+                  width: THUMBNAIL_ALIASES.low_quality.size[0],
+                  height: THUMBNAIL_ALIASES.low_quality.size[1],
+                  quality: THUMBNAIL_ALIASES.low_quality.quality
+                },
+                gallery: {
+                  width: THUMBNAIL_ALIASES.gallery.size[0],
+                  height: THUMBNAIL_ALIASES.gallery.size[1],
+                  quality: THUMBNAIL_ALIASES.gallery.quality
+                }
               }
-            }
-          });
-          logger.info(`Generated video thumbnails: ${baseName}_*.webp`);
+            });
+            logger.info(`Generated video thumbnails: ${baseName}_*.webp`);
+          } else {
+            logger.info(`Skipped video thumbnails (already exist): ${baseName}`);
+          }
 
           // Don't copy the original - we only keep the optimized MP4
 
