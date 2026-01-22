@@ -2,9 +2,9 @@
 import fs from 'fs/promises';
 import * as fsSync from 'fs';
 import path from 'path';
-import { parse } from 'csv-parse/sync';
 import slugify from 'slugify';
 import Logger from '../Logger.js';
+import { readTabularHeaders, readTabularRecords } from '../utils/tabular-reader.js';
 
 const logger = new Logger();
 
@@ -453,13 +453,11 @@ function buildMetadata(record, documentMapping, imageMapping) {
 // =============================================================================
 
 /**
- * Legge le intestazioni di un file CSV (riga 0).
+ * Legge le intestazioni di un file CSV/XLSX (riga 0).
  */
 export async function getCsvHeaders(csvPath) {
   try {
-    const content = await fs.readFile(csvPath);
-    const records = parse(content, { skip_empty_lines: true });
-    return records.length > 0 ? records[0] : [];
+    return await readTabularHeaders(csvPath);
   } catch (error) {
     logger.error(`[getCsvHeaders] Error reading CSV headers: ${error.message}`);
     return [];
@@ -467,13 +465,11 @@ export async function getCsvHeaders(csvPath) {
 }
 
 /**
- * Legge una preview di un file CSV (prime N righe, con colonne).
+ * Legge una preview di un file CSV/XLSX (prime N righe, con colonne).
  */
 export async function getCsvPreview(csvPath, maxRows = 10) {
   try {
-    const content = await fs.readFile(csvPath);
-    const allRecords = parse(content, { columns: true, skip_empty_lines: true });
-
+    const allRecords = await readTabularRecords(csvPath);
     return {
       data: allRecords.slice(0, maxRows),
       totalRows: allRecords.length
@@ -485,9 +481,9 @@ export async function getCsvPreview(csvPath, maxRows = 10) {
 }
 
 /**
- * Funzione principale per organizzare immagini e metadati da un file CSV
+ * Funzione principale per organizzare immagini e metadati da un file CSV/XLSX
  *
- * @param {string} csvPath - Percorso al file CSV
+ * @param {string} csvPath - Percorso al file CSV/XLSX
  * @param {string} webpDir - Directory contenente le immagini .webp
  * @param {string} outputDir - Directory di output per i risultati organizzati
  * @param {Function} progressCallback - Callback per aggiornamenti di progresso
@@ -509,7 +505,7 @@ export async function organizeFromCsv(
   // =============================================================================
 
   if (!csvPath || !fsSync.existsSync(csvPath)) {
-    throw new Error(`CSV file not found: ${csvPath}`);
+    throw new Error(`CSV/XLSX file not found: ${csvPath}`);
   }
 
   if (!webpDir || !fsSync.existsSync(webpDir)) {
@@ -539,13 +535,12 @@ export async function organizeFromCsv(
   const fileIndex = await indexImageFiles(webpDir);
 
   // Leggi e parsing del CSV
-  logger.info('[organizeFromCsv] Reading CSV file...');
+  logger.info('[organizeFromCsv] Reading CSV/XLSX file...');
   let records;
   try {
-    const content = await fs.readFile(csvPath);
-    records = parse(content, { columns: true, skip_empty_lines: true });
+    records = await readTabularRecords(csvPath);
   } catch (error) {
-    throw new Error(`CSV parsing failed: ${error.message}`);
+    throw new Error(`CSV/XLSX parsing failed: ${error.message}`);
   }
 
   // Applica limite righe se specificato

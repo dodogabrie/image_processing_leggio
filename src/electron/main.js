@@ -289,7 +289,10 @@ ipcMain.handle('csv:getPreview', async (_e, csvPath, maxRows) => getCsvPreview(c
 ipcMain.handle('hasCsvInFolder', async (_e, dir) => {
   try {
     const files = await fs.readdir(dir);
-    return files.some(f => f.toLowerCase().endsWith('.csv'));
+    return files.some(f => {
+      const lower = f.toLowerCase();
+      return lower.endsWith('.csv') || lower.endsWith('.xlsx');
+    });
   } catch (err) {
     logger.warn('[main] hasCsvInFolder error:', err.message);
     return false;

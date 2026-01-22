@@ -5,7 +5,7 @@
         class="btn btn-link w-100 text-start py-2 px-3"
         @click="expanded = !expanded"
       >
-        <strong>Anteprima CSV (prime {{ maxRows }} righe)</strong>
+        <strong>Anteprima CSV/XLSX (prime {{ maxRows }} righe)</strong>
         <span class="float-end">{{ expanded ? '▲' : '▼' }}</span>
       </button>
     </div>

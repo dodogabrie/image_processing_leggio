@@ -1,0 +1,40 @@
+{
+  "document": {
+    "identifier": "md:bib/dc:identifier",
+    "title": "md:bib/dc:title",
+    "creator": "md:bib/dc:creator",
+    "active": true,
+    "tags": "md:bib/dc:type",
+    "date": "md:bib/dc:date",
+    "document_type": "md:bib/dc:type",
+    "metadata_available": true,
+    "metadata_just_year": true,
+    "archive_name": "md:bib/md:holdings/md:library",
+    "archive_description_prefix": "md:bib/dc:description"
+  },
+  "image": {
+    "filename": "md:file/@xlink:href",
+    "sequence_number": "md:sequence_number",
+    "nomenclature": "md:nomenclature",
+    "usage": "md:usage",
+    "md5": "md:md5",
+    "filesize": "md:filesize",
+    "image_dimensions": {
+      "length": "md:image_dimensions/niso:imagelength",
+      "width": "md:image_dimensions/niso:imagewidth"
+    },
+    "image_metrics": {
+      "sampling_frequency_unit": "md:image_metrics/niso:samplingfrequencyunit",
+      "x_sampling_frequency": "md:image_metrics/niso:xsamplingfrequency",
+      "y_sampling_frequency": "md:image_metrics/niso:ysamplingfrequency",
+      "photometric_interpretation": "md:image_metrics/niso:photometricinterpretation",
+      "bit_per_sample": "md:image_metrics/niso:bitpersample"
+    },
+    "format": {
+      "name": "md:format/niso:name",
+      "mime": "md:format/niso:mime",
+      "compression": "md:format/niso:compression"
+    },
+    "datetime_created": "md:datetimecreated"
+  }
+}
