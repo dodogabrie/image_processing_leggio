@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import * as fsSync from 'fs';
 
 import { processDir } from '../backend/media_processor.js';
-import Logger from '../backend/Logger.js';
+import Logger, { setLogDirectory, getLogFilePath } from '../backend/Logger.js';
 import { getCsvHeaders, getCsvPreview } from '../backend/workers/organize_by_csv.js';
 import { setupPythonEnv } from '../backend/scripts/setup-python.js';
 import { postProcessResults } from '../backend/postprocessing.js';
@@ -441,6 +441,54 @@ ipcMain.handle('public:openExternal', async (_e, url) => {
 // Stop processing
 ipcMain.on('process:stop', () => { shouldStop = true; });
 
+// Log file handlers
+ipcMain.handle('log:getContent', async () => {
+  try {
+    const logPath = getLogFilePath();
+    logger.info(`[main] log:getContent requested, path: ${logPath}`);
+    if (!logPath || !fsSync.existsSync(logPath)) {
+      return { success: false, error: `Log file not found at ${logPath}` };
+    }
+    const content = await fs.readFile(logPath, 'utf-8');
+    return { success: true, content, path: logPath };
+  } catch (err) {
+    logger.error('[main] log:getContent error:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('log:getPath', async () => {
+  const logPath = getLogFilePath();
+  logger.info(`[main] log:getPath: ${logPath}`);
+  return { path: logPath, exists: logPath && fsSync.existsSync(logPath) };
+});
+
+ipcMain.handle('log:saveAs', async () => {
+  try {
+    const logPath = getLogFilePath();
+    logger.info(`[main] log:saveAs requested, path: ${logPath}`);
+    if (!logPath || !fsSync.existsSync(logPath)) {
+      return { success: false, error: `Log file not found at ${logPath}` };
+    }
+
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Save Log File',
+      defaultPath: `leggio_log_${new Date().toISOString().slice(0, 10)}.log`,
+      filters: [{ name: 'Log Files', extensions: ['log', 'txt'] }]
+    });
+
+    if (canceled || !filePath) {
+      return { success: false, canceled: true };
+    }
+
+    await fs.copyFile(logPath, filePath);
+    return { success: true, savedTo: filePath };
+  } catch (err) {
+    logger.error('[main] log:saveAs error:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
 // Register custom protocol scheme BEFORE app.whenReady()
 protocol.registerSchemesAsPrivileged([
   {
@@ -455,6 +503,10 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(() => {
+  // Initialize log directory to userData (writable on all platforms)
+  setLogDirectory(app.getPath('userData'));
+  logger.info('[main] Application starting, log directory initialized');
+
   // Register protocol handler for serving media files efficiently
   protocol.handle('media-file', (request) => {
     const url = request.url.slice('media-file://'.length);
