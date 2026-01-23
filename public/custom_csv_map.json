@@ -1,0 +1,10 @@
+{
+  "document": {
+    "identifier": "NOME FILE",
+    "title": "TITOLO",
+    "groupBy": "TITOLO"
+  },
+  "image": {
+    "filename": "NOME FILE"
+  }
+}

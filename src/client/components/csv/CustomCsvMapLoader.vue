@@ -97,7 +97,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, defineEmits } from 'vue'
+import { ref, onMounted, defineEmits, defineExpose } from 'vue'
 
 // Emits
 const emit = defineEmits(['mapChanged'])
@@ -257,6 +257,11 @@ function showMessage(text, type) {
     message.value = ''
   }, 5000)
 }
+
+defineExpose({
+  refreshCustomMap: checkCustomMapExists,
+  downloadCurrentMap
+})
 </script>
 
 <style scoped>

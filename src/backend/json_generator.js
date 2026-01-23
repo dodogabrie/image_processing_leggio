@@ -2,33 +2,32 @@
 import fs from 'fs/promises';
 import * as fsSync from 'fs';
 import path from 'path';
-import { parse } from 'csv-parse/sync';
 import slugify from 'slugify';
 import Logger from './Logger.js';
+import { readTabularRecords } from './utils/tabular-reader.js';
 
 import { extractMultiLanguageField } from './scripts/utils.js';
 
 const logger = new Logger();
 
 /**
- * Legge un CSV e restituisce un array di record ({ header: value }).
- * @param {string} csvPath - Percorso del file CSV.
+ * Legge un CSV/XLSX e restituisce un array di record ({ header: value }).
+ * @param {string} csvPath - Percorso del file CSV/XLSX.
  * @returns {Array<Object>} - Array di oggetti che rappresentano le righe.
- * @throws Error se il CSV non può essere letto o parsato.
+ * @throws Error se il file non può essere letto o parsato.
  */
 async function readCsv(csvPath) {
   if (!csvPath || !fsSync.existsSync(csvPath)) {
-    throw new Error(`CSV non trovato: ${csvPath}`);
+    throw new Error(`CSV/XLSX non trovato: ${csvPath}`);
   }
-  const content = await fs.readFile(csvPath, 'utf-8');
-  return parse(content, { columns: true, skip_empty_lines: true });
+  return readTabularRecords(csvPath);
 }
 
 /**
  * Genera file JSON a livello di documento per ogni sottocartella organizzata.
  * Ogni folder diventa un "documento" con metadata e array di immagini.
  * @param {string} organizedDir - Directory base con sottocartelle organizzate.
- * @param {string} csvPath - Percorso del CSV sorgente.
+ * @param {string} csvPath - Percorso del CSV/XLSX sorgente.
  * @param {Object} mapping - Mappa dei campi CSV per documento e immagine, ad esempio:
  *   {
  *     document: {
@@ -55,7 +54,7 @@ export async function generateDocumentJson(organizedDir, csvPath, mapping) {
     throw new Error('Mapping incompleto: servono mapping.document e mapping.image');
   }
 
-  // 1. Leggi e pulisci CSV
+  // 1. Leggi e pulisci CSV/XLSX
   let records;
   try {
     records = await readCsv(csvPath);

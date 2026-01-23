@@ -1,9 +1,9 @@
 {
   "document": {
-    "identifier": "Slug univoco generato dal titolo del documento",
+    "identifier": "Nome file originale dell'immagine (basename con o senza estensione) usato per trovare il file. In XML e' usato per lo slug della cartella.",
     "origin_folder": "Nome della cartella di origine del documento nell'archivio (può anche essere una sotto cartella)",
     "title": "Titolo completo del documento digitale",
-    "groupBy": "Campo che servirà per raggruppare le immagini di un documento sotto la stessa cartella",
+    "groupBy": "Campo che determina lo slug della cartella documento (obbligatorio nel flusso CSV)",
     "creator": "Nome dell'autore o fotografo",
     "active": "Booleano: true se il documento deve essere mostrato",
     "tags": "Categorie o etichette associate al documento",
@@ -18,7 +18,7 @@
     "archive_description_prefix": "Prefisso per le colonne CSV contenenti la descrizione multilingua dell'archivio (es. Descrizione Archivio_it)"
   },
   "image": {
-    "filename": "Nome del file immagine (senza estensione)",
+    "filename": "Nome del file immagine (con o senza estensione)",
     "filepath": "Percorso completo del file immagine",
     "sequence_number": "Ordine dell'immagine all'interno del documento",
     "nomenclature": "Denominazione o soggetto dell'immagine",

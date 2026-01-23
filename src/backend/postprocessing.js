@@ -54,7 +54,10 @@ export async function postProcessResults(
   let csvPath = null;
   try {
     const files = await fs.readdir(dir);
-    const found = files.find(f => f.toLowerCase().endsWith('.csv'));
+    const found = files.find(f => {
+      const lower = f.toLowerCase();
+      return lower.endsWith('.csv') || lower.endsWith('.xlsx');
+    });
     if (found) csvPath = path.join(dir, found);
   } catch (err) {
     logger.warn('[postprocessing] Errore lettura directory:', err.message);

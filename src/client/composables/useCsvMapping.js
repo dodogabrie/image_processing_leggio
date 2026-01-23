@@ -20,6 +20,8 @@ export function useCsvMapping() {
   const csvMappingFile = ref('')
   const showMapping = ref(false)
   const mappingExpanded = ref(false)
+  const mappingEditorExpanded = ref(false)
+  const requiredFieldIds = new Set(['document.identifier', 'document.groupBy'])
 
   // Computed: missing CSV columns
   const missingCsvColumns = computed(() => {
@@ -182,6 +184,68 @@ export function useCsvMapping() {
     }
   }
 
+  function flattenBridgeSection(sectionObj, prefix = '') {
+    const out = []
+    Object.entries(sectionObj || {}).forEach(([key, value]) => {
+      const nextKey = prefix ? `${prefix}.${key}` : key
+      if (typeof value === 'string') {
+        out.push({
+          key: nextKey,
+          description: value,
+          required: requiredFieldIds.has(nextKey)
+        })
+      } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+        out.push(...flattenBridgeSection(value, nextKey))
+      }
+    })
+    return out
+  }
+
+  const databaseFieldOptions = computed(() => {
+    const doc = flattenBridgeSection(databaseBridge.value.document)
+    const img = flattenBridgeSection(databaseBridge.value.image)
+    return {
+      document: doc.sort((a, b) => a.key.localeCompare(b.key)),
+      image: img.sort((a, b) => a.key.localeCompare(b.key))
+    }
+  })
+
+  const headerFieldMap = computed(() => {
+    const map = {}
+    for (const section of ['document', 'image']) {
+      Object.entries(resolvedFlat[section] || {}).forEach(([key, header]) => {
+        if (!header) return
+        map[header] = map[header] || []
+        map[header].push(`${section}.${key}`)
+      })
+    }
+    return map
+  })
+
+  function buildFlatMapFromHeaderSelection(headerToField) {
+    const out = { document: {}, image: {} }
+    Object.entries(headerToField || {}).forEach(([header, fieldIds]) => {
+      const list = Array.isArray(fieldIds) ? fieldIds : [fieldIds]
+      list.filter(Boolean).forEach(fieldId => {
+        const [section, ...rest] = fieldId.split('.')
+        const key = rest.join('.')
+        if (!section || !key || !out[section]) return
+        out[section][key] = header
+      })
+    })
+    return out
+  }
+
+  async function saveCustomMappingFromHeaderSelection(headerToField) {
+    const flat = buildFlatMapFromHeaderSelection(headerToField)
+    const nested = unflattenMap(flat)
+    await window.electronAPI.writePublicFile('custom_csv_map.json', JSON.stringify(nested, null, 2))
+    if (csvHeaders.value.length > 0) {
+      await loadCsvMapping(csvHeaders.value)
+    }
+    return flat
+  }
+
   /**
    * Carica il database bridge (descrizioni dei campi DB)
    */
@@ -205,6 +269,9 @@ export function useCsvMapping() {
     csvMappingFile,
     showMapping,
     mappingExpanded,
+    mappingEditorExpanded,
+    databaseFieldOptions,
+    headerFieldMap,
 
     // Computed
     missingCsvColumns,
@@ -214,6 +281,7 @@ export function useCsvMapping() {
     flattenMap,
     unflattenMap,
     loadCsvMapping,
-    loadDatabaseBridge
+    loadDatabaseBridge,
+    saveCustomMappingFromHeaderSelection
   }
 }

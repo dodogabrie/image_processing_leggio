@@ -12,7 +12,15 @@
     <!-- Collapsible mapping panel -->
     <div v-if="csvMapping.showMapping.value" class="mt-4">
       <!-- Custom CSV Map Loader -->
-      <CustomCsvMapLoader @mapChanged="handleCustomMapChange" class="mb-3" />
+      <CustomCsvMapLoader ref="customMapLoader" @mapChanged="handleCustomMapChange" class="mb-3" />
+      <CsvMappingEditor
+        v-if="csvMapping.filteredHeaders.value.length"
+        v-model:expanded="csvMapping.mappingEditorExpanded.value"
+        :headers="csvMapping.filteredHeaders.value"
+        :field-options="csvMapping.databaseFieldOptions.value"
+        :initial-mapping="csvMapping.headerFieldMap.value"
+        :save-mapping="saveCustomMapping"
+      />
 
       <!-- CSV Mapping Display Component -->
       <CsvMappingDisplay
@@ -35,13 +43,15 @@
 </template>
 
 <script setup>
-import { inject, watch } from 'vue'
+import { inject, watch, ref } from 'vue'
 import CustomCsvMapLoader from './CustomCsvMapLoader.vue'
 import CsvMappingDisplay from './CsvMappingDisplay.vue'
 import CsvPreview from './CsvPreview.vue'
+import CsvMappingEditor from './CsvMappingEditor.vue'
 
 const csvMapping = inject('csvMapping')
 const processing = inject('processing')
+const customMapLoader = ref(null)
 
 // Watch for selected folder changes to load CSV
 // IMPORTANT: Watch the .value of the ref, not the ref itself
@@ -63,7 +73,10 @@ watch(() => processing.selectedFolder.value, async (folder) => {
   }
 
   const files = await window.electronAPI.readDir(folder)
-  const csvFile = files.find(f => f.toLowerCase().endsWith('.csv'))
+  const csvFile = files.find(f => {
+    const lower = f.toLowerCase()
+    return lower.endsWith('.csv') || lower.endsWith('.xlsx')
+  })
   if (!csvFile) {
     csvMapping.showMapping.value = false
     csvMapping.csvMappingFile.value = ''
@@ -82,6 +95,17 @@ watch(() => processing.selectedFolder.value, async (folder) => {
 async function handleCustomMapChange() {
   if (csvMapping.csvHeaders.value.length > 0) {
     await csvMapping.loadCsvMapping(csvMapping.csvHeaders.value)
+  }
+}
+
+async function saveCustomMapping(headerSelection) {
+  await csvMapping.saveCustomMappingFromHeaderSelection(headerSelection)
+  csvMapping.showMapping.value = true
+  if (customMapLoader.value?.refreshCustomMap) {
+    await customMapLoader.value.refreshCustomMap()
+  }
+  if (customMapLoader.value?.downloadCurrentMap) {
+    await customMapLoader.value.downloadCurrentMap()
   }
 }
 </script>

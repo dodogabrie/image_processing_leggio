@@ -2,9 +2,9 @@
 import fs from 'fs/promises';
 import * as fsSync from 'fs';
 import path from 'path';
-import { parse } from 'csv-parse/sync';
 import slugify from 'slugify';
 import Logger from '../Logger.js';
+import { readTabularHeaders, readTabularRecords } from '../utils/tabular-reader.js';
 
 const logger = new Logger();
 
@@ -107,8 +107,72 @@ async function indexImageFiles(rootDir) {
   }
 
   await scanDirectory(rootDir);
-  logger.info(`[indexImageFiles] Indexed ${fileIndex.size} image files`);
+  logger.info(`[indexImageFiles] Indexed ${fileIndex.size} image files from ${rootDir}`);
+  if (fileIndex.size > 0 && fileIndex.size <= 5) {
+    // Log first few entries for debugging when index is small
+    const entries = [...fileIndex.entries()].slice(0, 5);
+    logger.info(`[indexImageFiles] Sample entries: ${entries.map(([k, v]) => `${k} -> ${v.path}`).join(', ')}`);
+  }
   return fileIndex;
+}
+
+/**
+ * Checks if a directory contains any image files.
+ */
+async function directoryHasImages(dir) {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (IMAGE_EXTENSIONS.includes(ext)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Removes folders that don't contain any image files.
+ * Also removes corresponding thumbnail folders and skips metadata writing for empty folders.
+ */
+async function pruneEmptyFolders(organizedDir, thumbDir) {
+  const prunedFolders = [];
+
+  try {
+    const entries = await fs.readdir(organizedDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const folderPath = path.join(organizedDir, entry.name);
+      const hasImages = await directoryHasImages(folderPath);
+
+      if (!hasImages) {
+        // Remove the empty organized folder
+        await fs.rm(folderPath, { recursive: true, force: true });
+        prunedFolders.push(entry.name);
+
+        // Also remove corresponding thumbnail folder if exists
+        const thumbFolderPath = path.join(thumbDir, entry.name);
+        try {
+          await fs.rm(thumbFolderPath, { recursive: true, force: true });
+        } catch {
+          // Thumbnail folder may not exist
+        }
+
+        logger.info(`[pruneEmptyFolders] Removed empty folder: ${entry.name}`);
+      }
+    }
+  } catch (error) {
+    logger.warn(`[pruneEmptyFolders] Error scanning folders: ${error.message}`);
+  }
+
+  return prunedFolders;
 }
 
 /**
@@ -264,7 +328,7 @@ function buildFieldValue(record, csvColumnName, mappingKey) {
 /**
  * Copia un file immagine principale nella cartella di destinazione.
  * - Se originDir è valorizzato, cerca SOLO lì.
- * - Altrimenti usa l'indice globale.
+ * - Altrimenti usa l'indice globale, con fallback a ricerca diretta in webpDir.
  */
 async function copyMainImage({
   fileIndex,
@@ -274,14 +338,22 @@ async function copyMainImage({
   folderSlug,
   originDir // string|null
 }) {
-  const sourceInfo = originDir
+  let sourceInfo = originDir
     ? findImageInDir(originDir, identifier)
     : fileIndex.get(identifier);
+
+  // Fallback: if not found in index, try direct search in webpDir root
+  if (!sourceInfo && !originDir) {
+    sourceInfo = findImageInDir(webpDir, identifier);
+    if (sourceInfo) {
+      logger.info(`[copyMainImage] Found "${identifier}" via direct search in webpDir`);
+    }
+  }
 
   if (!sourceInfo) {
     logger.warn(
       `[copyMainImage] Image not found for identifier "${identifier}"${
-        originDir ? ` in origin_folder ${originDir}` : ''
+        originDir ? ` in origin_folder ${originDir}` : ` (searched index and ${webpDir})`
       }`
     );
     return null;
@@ -306,7 +378,7 @@ async function copyMainImage({
 /**
  * Copia le miniature associate a un'immagine.
  * - Se originDir è valorizzato, calcola le miniature coerentemente al relativo path.
- * - Altrimenti usa la posizione derivata dall’indice.
+ * - Altrimenti usa la posizione derivata dall'indice, con fallback a ricerca diretta.
  */
 async function copyThumbnails({
   webpDir,
@@ -316,9 +388,15 @@ async function copyThumbnails({
   folderSlug,
   originDir // string|null
 }) {
-  const sourceInfo = originDir
+  let sourceInfo = originDir
     ? findImageInDir(originDir, identifier)
     : fileIndex.get(identifier);
+
+  // Fallback: if not found in index, try direct search in webpDir root
+  if (!sourceInfo && !originDir) {
+    sourceInfo = findImageInDir(webpDir, identifier);
+  }
+
   if (!sourceInfo) {
     logger.warn(`[copyThumbnails] No source image found for ${identifier}, skipping thumbnails`);
     return;
@@ -375,13 +453,11 @@ function buildMetadata(record, documentMapping, imageMapping) {
 // =============================================================================
 
 /**
- * Legge le intestazioni di un file CSV (riga 0).
+ * Legge le intestazioni di un file CSV/XLSX (riga 0).
  */
 export async function getCsvHeaders(csvPath) {
   try {
-    const content = await fs.readFile(csvPath);
-    const records = parse(content, { skip_empty_lines: true });
-    return records.length > 0 ? records[0] : [];
+    return await readTabularHeaders(csvPath);
   } catch (error) {
     logger.error(`[getCsvHeaders] Error reading CSV headers: ${error.message}`);
     return [];
@@ -389,13 +465,11 @@ export async function getCsvHeaders(csvPath) {
 }
 
 /**
- * Legge una preview di un file CSV (prime N righe, con colonne).
+ * Legge una preview di un file CSV/XLSX (prime N righe, con colonne).
  */
 export async function getCsvPreview(csvPath, maxRows = 10) {
   try {
-    const content = await fs.readFile(csvPath);
-    const allRecords = parse(content, { columns: true, skip_empty_lines: true });
-
+    const allRecords = await readTabularRecords(csvPath);
     return {
       data: allRecords.slice(0, maxRows),
       totalRows: allRecords.length
@@ -407,9 +481,9 @@ export async function getCsvPreview(csvPath, maxRows = 10) {
 }
 
 /**
- * Funzione principale per organizzare immagini e metadati da un file CSV
+ * Funzione principale per organizzare immagini e metadati da un file CSV/XLSX
  *
- * @param {string} csvPath - Percorso al file CSV
+ * @param {string} csvPath - Percorso al file CSV/XLSX
  * @param {string} webpDir - Directory contenente le immagini .webp
  * @param {string} outputDir - Directory di output per i risultati organizzati
  * @param {Function} progressCallback - Callback per aggiornamenti di progresso
@@ -431,7 +505,7 @@ export async function organizeFromCsv(
   // =============================================================================
 
   if (!csvPath || !fsSync.existsSync(csvPath)) {
-    throw new Error(`CSV file not found: ${csvPath}`);
+    throw new Error(`CSV/XLSX file not found: ${csvPath}`);
   }
 
   if (!webpDir || !fsSync.existsSync(webpDir)) {
@@ -461,13 +535,12 @@ export async function organizeFromCsv(
   const fileIndex = await indexImageFiles(webpDir);
 
   // Leggi e parsing del CSV
-  logger.info('[organizeFromCsv] Reading CSV file...');
+  logger.info('[organizeFromCsv] Reading CSV/XLSX file...');
   let records;
   try {
-    const content = await fs.readFile(csvPath);
-    records = parse(content, { columns: true, skip_empty_lines: true });
+    records = await readTabularRecords(csvPath);
   } catch (error) {
-    throw new Error(`CSV parsing failed: ${error.message}`);
+    throw new Error(`CSV/XLSX parsing failed: ${error.message}`);
   }
 
   // Applica limite righe se specificato
@@ -480,6 +553,7 @@ export async function organizeFromCsv(
   }
 
   logger.info(`[organizeFromCsv] Processing ${records.length} records`);
+  progressCallback({ current: 0, total: records.length, codice: 'Avvio organizzazione CSV' });
 
   // =============================================================================
   // DIRECTORY SETUP
@@ -498,7 +572,9 @@ export async function organizeFromCsv(
   const folderMetadata = {};
   let processedCount = 0;
 
-  for (const record of records) {
+  for (let index = 0; index < records.length; index++) {
+    const record = records[index];
+    const current = index + 1;
     try {
       // Estrai valori chiave
       // Normalize values: remove any file extension if present (common when identifier/groupBy use filename column)
@@ -510,6 +586,7 @@ export async function organizeFromCsv(
 
       if (!groupValue || !identifier) {
         logger.warn(`[organizeFromCsv] Skipping record: missing groupBy(${groupValue}) or identifier(${identifier})`);
+        progressCallback({ current, total: records.length, codice: identifier || groupValue || '' });
         continue;
       }
 
@@ -526,6 +603,7 @@ export async function organizeFromCsv(
           logger.error(
             `[organizeFromCsv] origin_folder not found under webpDir: "${originFolderVal}" (webpDir="${webpDir}")`
           );
+          progressCallback({ current, total: records.length, codice: identifier });
           continue;
         }
       }
@@ -572,22 +650,34 @@ export async function organizeFromCsv(
         folderMetadata[folderSlug].images.push(imageFields);
 
         // Callback di progresso
-        const processedFile = path.basename(mainImagePath);
-        progressCallback({
-          current: processedCount + 1,
-          total: records.length,
-          file: processedFile,
-          dest: mainImagePath
-        });
+        progressCallback({ current, total: records.length, codice: identifier });
       } else {
         // Se origin_folder era presente e l'immagine non è stata copiata, è già stato loggato errore.
         // Se non era presente, abbiamo già avvisato con warn nel copyMainImage.
+        progressCallback({ current, total: records.length, codice: identifier });
       }
 
       processedCount++;
     } catch (error) {
-      logger.error(`[organizeFromCsv] Error processing record ${processedCount}: ${error.message}`);
+      logger.error(`[organizeFromCsv] Error processing record ${current}: ${error.message}`);
+      progressCallback({ current, total: records.length, codice: '' });
     }
+  }
+
+  // =============================================================================
+  // PRUNE EMPTY FOLDERS
+  // =============================================================================
+
+  logger.info('[organizeFromCsv] Pruning empty folders...');
+  const prunedFolders = await pruneEmptyFolders(organizedDir, thumbDir);
+
+  // Remove pruned folders from metadata
+  for (const folderSlug of prunedFolders) {
+    delete folderMetadata[folderSlug];
+  }
+
+  if (prunedFolders.length > 0) {
+    logger.info(`[organizeFromCsv] Pruned ${prunedFolders.length} empty folders`);
   }
 
   // =============================================================================
@@ -608,6 +698,6 @@ export async function organizeFromCsv(
   }
 
   logger.info(
-    `[organizeFromCsv] Organization complete! Processed ${processedCount} records into ${Object.keys(folderMetadata).length} folders`
+    `[organizeFromCsv] Organization complete! Processed ${processedCount} records into ${Object.keys(folderMetadata).length} folders (pruned ${prunedFolders.length} empty)`
   );
 }

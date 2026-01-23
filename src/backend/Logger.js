@@ -1,41 +1,67 @@
 import fsSync from 'fs';
 import os from 'os';
-import path from 'path';               
+import path from 'path';
 import util from 'util';
 
-// Determine application name safely 
+// Determine application name safely
 const appName = process.title || 'app';
 
-// Funzione per determinare il path del log
+// Log directory path - will be set by main process
+let logDirPath = null;
+
+/**
+ * Sets the log directory path. Should be called from main process with app.getPath('userData').
+ *
+ * @param {string} dir - Directory path for log files.
+ */
+export function setLogDirectory(dir) {
+  logDirPath = dir;
+  console.log(`[Logger] Log directory set to: ${logDirPath}`);
+}
+
+/**
+ * Gets the current log file path.
+ *
+ * @returns {string|null} The log file path or null if not set.
+ */
+export function getLogFilePath() {
+  if (!logDirPath) return null;
+  return path.join(logDirPath, 'logs', 'app.log');
+}
+
+/**
+ * Gets the log directory path.
+ *
+ * @returns {string|null} The log directory path or null if not set.
+ */
+export function getLogDirectory() {
+  return logDirPath;
+}
+
 function getDefaultLogPath() {
-  // Se siamo in un worker o processo senza Electron
+  // If log directory was set by main process, use it
+  if (logDirPath) {
+    return path.join(logDirPath, 'logs', 'app.log');
+  }
+
+  // Fallback for workers or when not set
   if (!process.versions?.electron) {
     return path.join(process.cwd(), 'logs', 'worker.log');
   }
-  
-  try {
-    // Usa NODE_ENV per determinare se siamo in produzione
-    const isProduction = process.env.NODE_ENV === 'production';
-    
-    if (isProduction) {
-      return path.join(process.resourcesPath, 'logs', 'app.log');
-    } else {
-      return path.join(process.cwd(), 'logs', 'app.log');
-    }
-  } catch {
-    return path.join(process.cwd(), 'logs', 'app.log');
-  }
+
+  // Development fallback
+  return path.join(process.cwd(), 'logs', 'app.log');
 }
 
 export default class Logger {
   constructor(context = '', logFilePath = null) {
     this.context = context;
-    this.logFilePath = logFilePath || getDefaultLogPath();
-    
-    // Debug: stampa il path del log al momento della creazione
-    console.log(`[Logger] Inizializzato con path: ${this.logFilePath}`);
-    console.log(`[Logger] NODE_ENV: ${process.env.NODE_ENV}`);
-    console.log(`[Logger] process.versions.electron: ${process.versions?.electron}`);
+    this._explicitPath = logFilePath; // Only set if explicitly provided
+  }
+
+  _getLogPath() {
+    // Always use dynamic path unless explicitly overridden
+    return this._explicitPath || getDefaultLogPath();
   }
 
   _format(level, ...args) {
@@ -46,33 +72,22 @@ export default class Logger {
   }
 
   _writeToFile(msg) {
-    // Temporaneamente disabilitato per debug
-    return;
-    
-    if (!this.logFilePath) {
-      console.log('[Logger] SKIPPING: no logFilePath');
-      return;
-    }
-    
-    console.log(`[Logger] Writing to: ${this.logFilePath}`);
-    
-    // Creo la cartella se non esiste
-    const dir = path.dirname(this.logFilePath);
-    console.log(`[Logger] Creating dir: ${dir}`);
-    
+    const logPath = this._getLogPath();
+    if (!logPath) return;
+
+    // Create directory if needed
+    const dir = path.dirname(logPath);
     try {
       fsSync.mkdirSync(dir, { recursive: true });
-      console.log(`[Logger] Dir created successfully: ${dir}`);
     } catch (err) {
-      console.error(`Logger mkdirSync error:`, err);
+      // Ignore mkdir errors (may already exist)
     }
-    
-    // Appendo (il file viene creato se non esiste)
+
+    // Append to log file
     try {
-      fsSync.appendFileSync(this.logFilePath, msg + os.EOL, 'utf-8');
-      console.log(`[Logger] File written successfully`);
+      fsSync.appendFileSync(logPath, msg + os.EOL, 'utf-8');
     } catch (err) {
-      console.error(`Failed to write log to file: ${this.logFilePath}`, err);
+      // Silent fail - don't spam console with log write errors
     }
   }
 
