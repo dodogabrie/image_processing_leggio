@@ -530,8 +530,8 @@ export async function organizeFromCsv(
         }
       }
 
-      // Crea slug per la cartella
-      const folderSlug = slugify(groupValue, { lower: true, strict: true });
+      // Crea slug per la cartella (limitato a 80 caratteri per evitare problemi con MAX_PATH di Windows)
+      const folderSlug = slugify(groupValue, { lower: true, strict: true }).slice(0, 80);
       const documentFolder = path.join(organizedDir, folderSlug);
 
       // Crea cartelle se necessario
