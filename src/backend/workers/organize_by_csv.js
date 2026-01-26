@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import * as fsSync from 'fs';
 import path from 'path';
 import slugify from 'slugify';
+import crypto from 'crypto';
 import Logger from '../Logger.js';
 import { readTabularHeaders, readTabularRecords } from '../utils/tabular-reader.js';
 
@@ -28,6 +29,10 @@ const THUMBNAIL_TYPES = ['low_quality', 'gallery'];
 
 // Estensioni immagini supportate (per modalità senza ottimizzazione)
 const IMAGE_EXTENSIONS = ['.webp', '.tif', '.tiff', '.jpg', '.jpeg', '.png'];
+
+// Limiti per ridurre i path in ZIP ed evitare problemi su Windows
+const MAX_FOLDER_SLUG = 60;
+const MAX_FILENAME_BASE = 80;
 
 // =============================================================================
 /**
@@ -71,6 +76,26 @@ function flattenMapping(mapping) {
   }
 
   return result;
+}
+
+function shortHash(value) {
+  return crypto.createHash('sha1').update(value).digest('hex').slice(0, 6);
+}
+
+function clampSlug(value, maxLength) {
+  const slug = slugify(value, { lower: true, strict: true });
+  if (slug.length <= maxLength) return slug;
+  const suffix = shortHash(slug);
+  const trimmed = slug.slice(0, Math.max(1, maxLength - (suffix.length + 1))).replace(/-+$/g, '');
+  return `${trimmed}-${suffix}`;
+}
+
+function clampFileBase(value, maxLength) {
+  const safe = value.replace(/[\\/:*?"<>|]/g, '-');
+  if (safe.length <= maxLength) return safe;
+  const suffix = shortHash(safe);
+  const trimmed = safe.slice(0, Math.max(1, maxLength - (suffix.length + 1))).replace(/-+$/g, '');
+  return `${trimmed}-${suffix}`;
 }
 
 /**
@@ -362,7 +387,8 @@ async function copyMainImage({
   const destExt = sourceInfo.ext || path.extname(sourceInfo.path) || '.webp';
   // Clean identifier for output filename: remove leading underscores to avoid double underscores
   const cleanIdentifier = identifier.replace(/^_+/, '');
-  const destName = `${folderSlug}_${cleanIdentifier}${destExt}`;
+  const baseName = clampFileBase(cleanIdentifier, MAX_FILENAME_BASE);
+  const destName = `${baseName}${destExt}`;
   const destPath = path.join(destFolder, destName);
 
   try {
@@ -413,11 +439,12 @@ async function copyThumbnails({
 
   // Clean identifier for output filename: remove leading underscores to avoid double underscores
   const cleanIdentifier = identifier.replace(/^_+/, '');
+  const baseName = clampFileBase(cleanIdentifier, MAX_FILENAME_BASE);
 
   for (const type of THUMBNAIL_TYPES) {
     const thumbName = `${identifier}_${type}.webp`;  // Source uses original identifier
     const thumbSource = path.join(thumbSourceDir, thumbName);
-    const thumbDest = path.join(thumbDestDir, `${folderSlug}_${cleanIdentifier}_${type}.webp`);  // Dest uses clean identifier
+    const thumbDest = path.join(thumbDestDir, `${baseName}_${type}.webp`);  // Dest uses clean identifier
 
     try {
       await fs.copyFile(thumbSource, thumbDest);
@@ -608,8 +635,8 @@ export async function organizeFromCsv(
         }
       }
 
-      // Crea slug per la cartella (limitato a 80 caratteri per evitare problemi con MAX_PATH di Windows)
-      const folderSlug = slugify(groupValue, { lower: true, strict: true }).slice(0, 80);
+      // Crea slug per la cartella (limitato per evitare problemi con MAX_PATH di Windows)
+      const folderSlug = clampSlug(groupValue, MAX_FOLDER_SLUG);
       const documentFolder = path.join(organizedDir, folderSlug);
 
       // Crea cartelle se necessario

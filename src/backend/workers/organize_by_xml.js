@@ -2,11 +2,35 @@
 import fs from 'fs/promises';
 import path from 'path';
 import slugify from 'slugify';
+import crypto from 'crypto';
 import Logger from '../Logger.js';
 
 const logger = new Logger();
 
 const THUMBNAIL_TYPES = ['low_quality', 'gallery'];
+
+const MAX_FOLDER_SLUG = 60;
+const MAX_FILENAME_BASE = 80;
+
+function shortHash(value) {
+  return crypto.createHash('sha1').update(value).digest('hex').slice(0, 6);
+}
+
+function clampSlug(value, maxLength) {
+  const slug = slugify(value, { lower: true, strict: true });
+  if (slug.length <= maxLength) return slug;
+  const suffix = shortHash(slug);
+  const trimmed = slug.slice(0, Math.max(1, maxLength - (suffix.length + 1))).replace(/-+$/g, '');
+  return `${trimmed}-${suffix}`;
+}
+
+function clampFileBase(value, maxLength) {
+  const safe = value.replace(/[\\/:*?"<>|]/g, '-');
+  if (safe.length <= maxLength) return safe;
+  const suffix = shortHash(safe);
+  const trimmed = safe.slice(0, Math.max(1, maxLength - (suffix.length + 1))).replace(/-+$/g, '');
+  return `${trimmed}-${suffix}`;
+}
 
 /**
  * Build index of all webp files for quick lookup.
@@ -41,7 +65,7 @@ async function indexWebpFiles(rootDir) {
  * @param {string} webpDir
  * @param {string} destThumbnailDir
  */
-async function copyThumbnails(identifier, webpDir, destThumbnailDir) {
+async function copyThumbnails(identifier, webpDir, destThumbnailDir, baseName) {
   await fs.mkdir(destThumbnailDir, { recursive: true });
 
   const thumbnailsDir = path.join(webpDir, 'thumbnails');
@@ -49,7 +73,7 @@ async function copyThumbnails(identifier, webpDir, destThumbnailDir) {
   for (const thumbType of THUMBNAIL_TYPES) {
     const thumbName = `${identifier}_${thumbType}.webp`;
     const srcThumb = path.join(thumbnailsDir, thumbName);
-    const destThumb = path.join(destThumbnailDir, thumbName);
+    const destThumb = path.join(destThumbnailDir, `${baseName}_${thumbType}.webp`);
 
     try {
       await fs.copyFile(srcThumb, destThumb);
@@ -105,7 +129,7 @@ export async function organizeFromXml(metadataJsonPaths, webpDir, outputDir, pro
 
       // Use identifier as folder name (no groupBy)
       const folderName = docMeta.identifier || 'unknown';
-      const slug = slugify(folderName, { lower: true, strict: true });
+      const slug = clampSlug(folderName, MAX_FOLDER_SLUG);
 
       // Create document folder
       const docDir = path.join(organizedDir, slug);
@@ -132,12 +156,13 @@ export async function organizeFromXml(metadataJsonPaths, webpDir, outputDir, pro
         }
 
         // Copy image to organized folder
-        const destName = `${slug}_${identifier}.webp`;
+        const baseName = clampFileBase(identifier, MAX_FILENAME_BASE);
+        const destName = `${baseName}.webp`;
         const destPath = path.join(docDir, destName);
         await fs.copyFile(webpPath, destPath);
 
         // Copy thumbnails
-        await copyThumbnails(identifier, webpDir, docThumbnailDir);
+        await copyThumbnails(identifier, webpDir, docThumbnailDir, baseName);
 
         processedImages.push({
           ...img,
