@@ -252,6 +252,7 @@ export function useProcessing(csvMapping) {
         `  Dimensione massima: ${(sortedFiles[sortedFiles.length - 1].size / 1024).toFixed(1)} KB\n` +
         `  Dimensione media: ${(avgSize / 1024).toFixed(1)} KB\n` +
         `  Dimensione totale: ${(totalSize / 1024).toFixed(1)} KB\n\n` +
+        (res.previewVideoPath ? `Preview video: ${res.previewVideoPath}\n\n` : '') +
         'I file verranno automaticamente eliminati tra 60 secondi.'
 
       // Auto-cleanup after 60 seconds
@@ -261,7 +262,9 @@ export function useProcessing(csvMapping) {
         resultMessage.value += '\n\nFile di anteprima eliminati.'
       }, 60000)
     } else if (previewMode.value && res.success && (!res.previewFileSizes || res.previewFileSizes.length === 0)) {
-      resultMessage.value = 'Anteprima completata, ma nessuna immagine trovata. Verifica che la cartella contenga file immagine (TIF, JPG, PNG).'
+      resultMessage.value = res.previewVideoPath
+        ? `Anteprima completata.\n\nPreview video: ${res.previewVideoPath}\n\nI file verranno automaticamente eliminati tra 60 secondi.`
+        : 'Anteprima completata, ma nessuna immagine trovata. Verifica che la cartella contenga file immagine (TIF, JPG, PNG).'
     } else {
       resultMessage.value = res.success ? 'Processamento completato con successo!' : 'Errore: ' + (res.error || '')
     }
@@ -335,6 +338,19 @@ export function useProcessing(csvMapping) {
       let t = `Organizzazione CSV: ${current} di ${total}`
       if (codice) t += `\nUltimo: ${codice}`
       csvText.value = t
+    })
+
+    window.electronAPI.onZipLog(message => {
+      showFolderProgress.value = false
+      percent.value = 100
+      const base = 'Creazione ZIP in corso...'
+      csvText.value = message ? `${base}\n${message}` : base
+    })
+
+    window.electronAPI.onZipDone(outputZip => {
+      showFolderProgress.value = false
+      percent.value = 100
+      csvText.value = `ZIP completato: ${outputZip}`
     })
   })
 

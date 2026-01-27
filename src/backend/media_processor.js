@@ -74,13 +74,16 @@ function getThumbnailAliases(aggressivity = 'standard') {
 // Profili di ottimizzazione video
 const VIDEO_OPTIMIZATION_PROFILES = {
   web: {
+    // Visually lossless-ish MP4 (H.264) for speed + compatibility
     codec: 'libx264',
-    crf: 28,  // Increased from 23 for better compression (higher = smaller file)
+    crf: 16,
     preset: 'medium',
     maxWidth: 1920,
     maxHeight: 1080,
-    audioBitrate: '96k',  // Reduced from 128k for smaller file
-    audioCodec: 'aac'
+    audioBitrate: '128k',
+    audioCodec: 'aac',
+    faststart: true,
+    scale: false
   },
   mobile: {
     codec: 'libx264',
@@ -602,20 +605,66 @@ export async function processDir(
         const src = path.join(dir, file);
         const baseName = path.basename(file, path.extname(file));
         const optimizedDest = path.join(outDir, `${baseName}.mp4`);
+        const originalDest = path.join(outDir, file);
+        const srcExt = path.extname(file).toLowerCase();
 
-        // Skip if optimized video already exists
-        let videoExists = false;
+        // Skip if optimized or original video already exists
+        let optimizedExists = false;
+        let originalExists = false;
+        let optimizedSize = 0;
+        let originalSize = 0;
         try {
-          if ((await fs.stat(optimizedDest)).size > 0) videoExists = true;
+          const stats = await fs.stat(optimizedDest);
+          if (stats.size > 0) {
+            optimizedExists = true;
+            optimizedSize = stats.size;
+          }
+        } catch {}
+        try {
+          const stats = await fs.stat(originalDest);
+          if (stats.size > 0) {
+            originalExists = true;
+            originalSize = stats.size;
+          }
         } catch {}
 
         try {
-          if (!videoExists) {
+          if (srcExt === '.mp4') {
+            if (!originalExists) {
+              await fs.copyFile(src, originalDest);
+              const stats = await fs.stat(originalDest);
+              originalExists = stats.size > 0;
+              originalSize = stats.size;
+              logger.info(`Copied video (mp4, no transcode): ${file}`);
+            } else {
+              logger.info(`Skipped video (mp4 already exists): ${file}`);
+            }
+          } else {
+          if (originalExists) {
+            if (optimizedExists && optimizedSize > originalSize) {
+              try {
+                await fs.unlink(optimizedDest);
+                logger.info(`Removed larger optimized video: ${baseName}.mp4 (kept original)`);
+              } catch {}
+            }
+            logger.info(`Skipped video optimization (kept original): ${file}`);
+          } else if (optimizedExists) {
+            logger.info(`Skipped video (already exists): ${file}`);
+          } else {
+            const srcStats = await fs.stat(src);
             // Ottimizza video per il web
             await optimizeVideo(src, optimizedDest, VIDEO_OPTIMIZATION_PROFILES.web);
+            const outStats = await fs.stat(optimizedDest);
+            if (outStats.size > srcStats.size) {
+              await fs.unlink(optimizedDest);
+              await fs.copyFile(src, originalDest);
+              logger.info(`Optimized video larger than original, kept original: ${file}`);
+              originalExists = true;
+              originalSize = srcStats.size;
+            } else {
             logger.info(`Optimized video: ${file} → ${baseName}.mp4`);
-          } else {
-            logger.info(`Skipped video (already exists): ${file}`);
+            }
+          }
           }
 
           // Genera thumbnails WebP del video nella cartella thumbnails

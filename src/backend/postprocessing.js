@@ -145,6 +145,7 @@ export async function postProcessResults(
   }
 
   logger.info(`[postprocessing] Forking zip worker: ${zipWorkerPath}`);
+  webContents.send('zip:log', 'Creazione ZIP in corso, attendere il completamento...');
   await new Promise((resolve, reject) => {
     const child = fork(
       zipWorkerPath,

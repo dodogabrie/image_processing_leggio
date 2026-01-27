@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onCsvProgress: callback =>
     ipcRenderer.on('csv:progress', (_e, progress) => callback(progress)),
 
+  onZipLog: callback =>
+    ipcRenderer.on('zip:log', (_e, message) => callback(message)),
+
+  onZipDone: callback =>
+    ipcRenderer.on('zip:done', (_e, outputZip) => callback(outputZip)),
+
   hasCsvInFolder: dir => ipcRenderer.invoke('hasCsvInFolder', dir),
 
   readDir: (dir) => ipcRenderer.invoke('fs:readDir', dir),

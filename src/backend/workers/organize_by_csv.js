@@ -29,6 +29,7 @@ const THUMBNAIL_TYPES = ['low_quality', 'gallery'];
 
 // Estensioni immagini supportate (per modalità senza ottimizzazione)
 const IMAGE_EXTENSIONS = ['.webp', '.tif', '.tiff', '.jpg', '.jpeg', '.png'];
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
 
 // Limiti per ridurre i path in ZIP ed evitare problemi su Windows
 const MAX_FOLDER_SLUG = 60;
@@ -142,15 +143,57 @@ async function indexImageFiles(rootDir) {
 }
 
 /**
- * Checks if a directory contains any image files.
+ * Costruisce un indice di tutti i file video supportati (chiave = basename, valore = info path/estensione)
+ * NOTA: se esistono duplicati con lo stesso basename in cartelle diverse, l'ultimo sovrascrive i precedenti.
  */
-async function directoryHasImages(dir) {
+async function indexVideoFiles(rootDir) {
+  const fileIndex = new Map();
+
+  async function scanDirectory(directory) {
+    try {
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(directory, entry.name);
+
+        if (entry.isDirectory()) {
+          await scanDirectory(fullPath);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (!VIDEO_EXTENSIONS.includes(ext)) continue;
+
+          const base = path.basename(entry.name, ext);
+          fileIndex.set(base, {
+            path: fullPath,
+            ext,
+            relativeDir: path.dirname(path.relative(rootDir, fullPath))
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn(`[indexVideoFiles] Cannot scan directory ${directory}: ${error.message}`);
+    }
+  }
+
+  await scanDirectory(rootDir);
+  logger.info(`[indexVideoFiles] Indexed ${fileIndex.size} video files from ${rootDir}`);
+  if (fileIndex.size > 0 && fileIndex.size <= 5) {
+    const entries = [...fileIndex.entries()].slice(0, 5);
+    logger.info(`[indexVideoFiles] Sample entries: ${entries.map(([k, v]) => `${k} -> ${v.path}`).join(', ')}`);
+  }
+  return fileIndex;
+}
+
+/**
+ * Checks if a directory contains any image or video files.
+ */
+async function directoryHasMedia(dir) {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
-        if (IMAGE_EXTENSIONS.includes(ext)) {
+        if (IMAGE_EXTENSIONS.includes(ext) || VIDEO_EXTENSIONS.includes(ext)) {
           return true;
         }
       }
@@ -175,9 +218,9 @@ async function pruneEmptyFolders(organizedDir, thumbDir) {
       if (!entry.isDirectory()) continue;
 
       const folderPath = path.join(organizedDir, entry.name);
-      const hasImages = await directoryHasImages(folderPath);
+      const hasMedia = await directoryHasMedia(folderPath);
 
-      if (!hasImages) {
+      if (!hasMedia) {
         // Remove the empty organized folder
         await fs.rm(folderPath, { recursive: true, force: true });
         prunedFolders.push(entry.name);
@@ -205,6 +248,23 @@ async function pruneEmptyFolders(organizedDir, thumbDir) {
  */
 function findImageInDir(dir, identifier) {
   for (const ext of IMAGE_EXTENSIONS) {
+    const candidate = path.join(dir, `${identifier}${ext}`);
+    if (fsSync.existsSync(candidate)) {
+      return {
+        path: candidate,
+        ext,
+        relativeDir: path.dirname(path.relative(dir, candidate))
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Trova un video nella cartella specificata provando tutte le estensioni supportate.
+ */
+function findVideoInDir(dir, identifier) {
+  for (const ext of VIDEO_EXTENSIONS) {
     const candidate = path.join(dir, `${identifier}${ext}`);
     if (fsSync.existsSync(candidate)) {
       return {
@@ -402,6 +462,55 @@ async function copyMainImage({
 }
 
 /**
+ * Copia un file video principale nella cartella di destinazione.
+ * - Se originDir è valorizzato, cerca SOLO lì.
+ * - Altrimenti usa l'indice globale, con fallback a ricerca diretta in webpDir.
+ */
+async function copyMainVideo({
+  videoIndex,
+  identifier,
+  webpDir,
+  destFolder,
+  originDir // string|null
+}) {
+  let sourceInfo = originDir
+    ? findVideoInDir(originDir, identifier)
+    : videoIndex.get(identifier);
+
+  // Fallback: if not found in index, try direct search in webpDir root
+  if (!sourceInfo && !originDir) {
+    sourceInfo = findVideoInDir(webpDir, identifier);
+    if (sourceInfo) {
+      logger.info(`[copyMainVideo] Found "${identifier}" via direct search in webpDir`);
+    }
+  }
+
+  if (!sourceInfo) {
+    logger.warn(
+      `[copyMainVideo] Video not found for identifier "${identifier}"${
+        originDir ? ` in origin_folder ${originDir}` : ` (searched index and ${webpDir})`
+      }`
+    );
+    return null;
+  }
+
+  const destExt = sourceInfo.ext || path.extname(sourceInfo.path) || '.mp4';
+  const cleanIdentifier = identifier.replace(/^_+/, '');
+  const baseName = clampFileBase(cleanIdentifier, MAX_FILENAME_BASE);
+  const destName = `${baseName}${destExt}`;
+  const destPath = path.join(destFolder, destName);
+
+  try {
+    await fs.copyFile(sourceInfo.path, destPath);
+    logger.info(`[copyMainVideo] Copied: ${path.basename(sourceInfo.path)} → ${destName}`);
+    return destPath;
+  } catch (error) {
+    logger.error(`[copyMainVideo] Failed to copy ${path.basename(sourceInfo.path)}: ${error.message}`);
+    return null;
+  }
+}
+
+/**
  * Copia le miniature associate a un'immagine.
  * - Se originDir è valorizzato, calcola le miniature coerentemente al relativo path.
  * - Altrimenti usa la posizione derivata dall'indice, con fallback a ricerca diretta.
@@ -451,6 +560,59 @@ async function copyThumbnails({
       logger.info(`[copyThumbnails] Copied thumbnail: ${thumbName}`);
     } catch (error) {
       logger.warn(`[copyThumbnails] Missing thumbnail ${thumbName}: ${error.code}`);
+    }
+  }
+}
+
+/**
+ * Copia le miniature associate a un video.
+ * - Se originDir è valorizzato, calcola le miniature coerentemente al relativo path.
+ * - Altrimenti usa la posizione derivata dall'indice, con fallback a ricerca diretta.
+ */
+async function copyVideoThumbnails({
+  webpDir,
+  videoIndex,
+  identifier,
+  thumbDir,
+  folderSlug,
+  originDir // string|null
+}) {
+  let sourceInfo = originDir
+    ? findVideoInDir(originDir, identifier)
+    : videoIndex.get(identifier);
+
+  // Fallback: if not found in index, try direct search in webpDir root
+  if (!sourceInfo && !originDir) {
+    sourceInfo = findVideoInDir(webpDir, identifier);
+  }
+
+  if (!sourceInfo) {
+    logger.warn(`[copyVideoThumbnails] No source video found for ${identifier}, skipping thumbnails`);
+    return;
+  }
+
+  const thumbnailsRoot = path.join(webpDir, 'thumbnails');
+  const relativePath = originDir
+    ? path.relative(webpDir, path.dirname(sourceInfo.path))
+    : (sourceInfo.relativeDir || path.relative(webpDir, path.dirname(sourceInfo.path)));
+  const thumbSourceDir = path.join(thumbnailsRoot, relativePath);
+  const thumbDestDir = path.join(thumbDir, folderSlug);
+
+  await fs.mkdir(thumbDestDir, { recursive: true });
+
+  const cleanIdentifier = identifier.replace(/^_+/, '');
+  const baseName = clampFileBase(cleanIdentifier, MAX_FILENAME_BASE);
+
+  for (const type of THUMBNAIL_TYPES) {
+    const thumbName = `${identifier}_${type}.webp`;
+    const thumbSource = path.join(thumbSourceDir, thumbName);
+    const thumbDest = path.join(thumbDestDir, `${baseName}_${type}.webp`);
+
+    try {
+      await fs.copyFile(thumbSource, thumbDest);
+      logger.info(`[copyVideoThumbnails] Copied thumbnail: ${thumbName}`);
+    } catch (error) {
+      logger.warn(`[copyVideoThumbnails] Missing thumbnail ${thumbName}: ${error.code}`);
     }
   }
 }
@@ -560,6 +722,14 @@ export async function organizeFromCsv(
   // Costruisci indice delle immagini (usato solo quando origin_folder non è fornito)
   logger.info('[organizeFromCsv] Building file index...');
   const fileIndex = await indexImageFiles(webpDir);
+  const videoRootDir = outputDir;
+  const videoIndex = await indexVideoFiles(videoRootDir);
+  if (videoRootDir !== webpDir) {
+    const fallbackVideoIndex = await indexVideoFiles(webpDir);
+    for (const [key, value] of fallbackVideoIndex.entries()) {
+      if (!videoIndex.has(key)) videoIndex.set(key, value);
+    }
+  }
 
   // Leggi e parsing del CSV
   logger.info('[organizeFromCsv] Reading CSV/XLSX file...');
@@ -605,7 +775,7 @@ export async function organizeFromCsv(
     try {
       // Estrai valori chiave
       // Normalize values: remove any file extension if present (common when identifier/groupBy use filename column)
-      const extensionRegex = /\.(jpg|jpeg|png|tif|tiff|webp)$/i;
+      const extensionRegex = /\.(jpg|jpeg|png|tif|tiff|webp|mp4|mov|avi|mkv|webm|m4v)$/i;
       const rawGroupValue = String(record[documentMapping.groupBy] || '').trim();
       const groupValue = rawGroupValue.replace(extensionRegex, '');
       const rawIdentifier = String(record[documentMapping.identifier] || '').trim();
@@ -623,12 +793,14 @@ export async function organizeFromCsv(
 
       // Risolvi la cartella di origine sotto webpDir (se fornita)
       let originDir = null;
+      let originVideoDir = null;
       if (originFolderVal) {
         originDir = await resolveOriginFolder(webpDir, originFolderVal);
-        if (!originDir) {
-          // Se l'utente ha passato origin_folder ma non la troviamo, segnaliamo e saltiamo il record.
+        originVideoDir = await resolveOriginFolder(videoRootDir, originFolderVal);
+        if (!originDir && !originVideoDir) {
+          // Se l'utente ha passato origin_folder ma non la troviamo in nessuna base, segnaliamo e saltiamo il record.
           logger.error(
-            `[organizeFromCsv] origin_folder not found under webpDir: "${originFolderVal}" (webpDir="${webpDir}")`
+            `[organizeFromCsv] origin_folder not found under webp/video roots: "${originFolderVal}" (webpDir="${webpDir}", videoDir="${videoRootDir}")`
           );
           progressCallback({ current, total: records.length, codice: identifier });
           continue;
@@ -651,18 +823,23 @@ export async function organizeFromCsv(
         };
       }
 
-      // Copia immagine principale
-      const mainImagePath = await copyMainImage({
-        fileIndex,
-        identifier,
-        webpDir,
-        destFolder: documentFolder,
-        folderSlug,
-        originDir // se presente, cerca solo lì
-      });
+      // Copia immagine o video principale
+      let mainImagePath = null;
+      if (!originFolderVal || originDir) {
+        mainImagePath = await copyMainImage({
+          fileIndex,
+          identifier,
+          webpDir,
+          destFolder: documentFolder,
+          folderSlug,
+          originDir // se presente, cerca solo lì
+        });
+      }
+
+      let copiedMedia = false;
 
       if (mainImagePath) {
-        // Copia miniature
+        copiedMedia = true;
         await copyThumbnails({
           webpDir,
           fileIndex,
@@ -671,18 +848,35 @@ export async function organizeFromCsv(
           folderSlug,
           originDir
         });
+      } else {
+        const mainVideoPath = await copyMainVideo({
+          videoIndex,
+          identifier,
+          webpDir: videoRootDir,
+          destFolder: documentFolder,
+          originDir: originVideoDir || null
+        });
 
-        // Aggiungi metadati immagine
+        if (mainVideoPath) {
+          copiedMedia = true;
+          await copyVideoThumbnails({
+            webpDir: videoRootDir,
+            videoIndex,
+            identifier,
+            thumbDir,
+            folderSlug,
+            originDir: originVideoDir || null
+          });
+        }
+      }
+
+      if (copiedMedia) {
         const { imageFields } = buildMetadata(record, documentMapping, imageMapping);
         folderMetadata[folderSlug].images.push(imageFields);
-
-        // Callback di progresso
-        progressCallback({ current, total: records.length, codice: identifier });
-      } else {
-        // Se origin_folder era presente e l'immagine non è stata copiata, è già stato loggato errore.
-        // Se non era presente, abbiamo già avvisato con warn nel copyMainImage.
-        progressCallback({ current, total: records.length, codice: identifier });
       }
+
+      // Callback di progresso
+      progressCallback({ current, total: records.length, codice: identifier });
 
       processedCount++;
     } catch (error) {

@@ -28,7 +28,11 @@ export async function optimizeVideo(inputPath, outputPath, options = {}) {
     maxWidth = 1920,
     maxHeight = 1080,
     audioBitrate = '128k',
-    audioCodec = 'aac'
+    audioCodec = 'aac',
+    videoBitrate = null,
+    faststart = true,
+    extraArgs = [],
+    scale = true
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -36,11 +40,13 @@ export async function optimizeVideo(inputPath, outputPath, options = {}) {
       '-i', inputPath,
       '-c:v', codec,
       '-crf', crf.toString(),
-      '-preset', preset,
-      '-vf', `scale='min(${maxWidth},iw)':'min(${maxHeight},ih)':force_original_aspect_ratio=decrease`,
+      ...(preset ? ['-preset', preset] : []),
+      ...(scale ? ['-vf', `scale='min(${maxWidth},iw)':'min(${maxHeight},ih)':force_original_aspect_ratio=decrease`] : []),
+      ...(videoBitrate ? ['-b:v', videoBitrate] : []),
       '-c:a', audioCodec,
       '-b:a', audioBitrate,
-      '-movflags', '+faststart',
+      ...extraArgs,
+      ...(faststart ? ['-movflags', '+faststart'] : []),
       '-y', // Sovrascrivi file esistente
       outputPath
     ];
@@ -83,6 +89,77 @@ export async function optimizeVideo(inputPath, outputPath, options = {}) {
 
     ffmpeg.on('error', (error) => {
       logger.error(`[video_worker] FFmpeg spawn error: ${error.message}`);
+      reject(error);
+    });
+  });
+}
+
+/**
+ * Crea una preview video corta (es. 5s) per modalità anteprima
+ * @param {string} inputPath - Percorso video di input
+ * @param {string} outputPath - Percorso video di output
+ * @param {Object} options - Opzioni per la preview
+ */
+export async function createVideoPreview(inputPath, outputPath, options = {}) {
+  const {
+    codec = 'libx264',
+    crf = 30,
+    preset = 'ultrafast',
+    maxWidth = 1280,
+    maxHeight = 720,
+    audioBitrate = '96k',
+    audioCodec = 'aac',
+    durationSeconds = 5
+  } = options;
+
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', inputPath,
+      '-t', durationSeconds.toString(),
+      '-c:v', codec,
+      '-crf', crf.toString(),
+      ...(preset ? ['-preset', preset] : []),
+      '-vf', `scale='min(${maxWidth},iw)':'min(${maxHeight},ih)':force_original_aspect_ratio=decrease`,
+      '-c:a', audioCodec,
+      '-b:a', audioBitrate,
+      '-movflags', '+faststart',
+      '-y',
+      outputPath
+    ];
+
+    logger.info(`[video_worker] Starting video preview: ${path.basename(inputPath)}`);
+    logger.info(`[video_worker] FFmpeg preview command: ffmpeg ${args.join(' ')}`);
+
+    const ffmpegCommand = getFFmpegCommand();
+    const ffmpeg = spawn(ffmpegCommand, args);
+    let stderr = '';
+
+    ffmpeg.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ffmpeg.on('close', async (code) => {
+      if (code === 0) {
+        try {
+          const stats = await fs.stat(outputPath);
+          if (stats.size > 0) {
+            logger.info(`[video_worker] Video preview created: ${path.basename(outputPath)} (${Math.round(stats.size / 1024 / 1024)}MB)`);
+            resolve();
+          } else {
+            throw new Error('Output file is empty');
+          }
+        } catch (error) {
+          reject(new Error(`Preview output validation failed: ${error.message}`));
+        }
+      } else {
+        logger.error(`[video_worker] FFmpeg preview failed with code ${code}`);
+        logger.error(`[video_worker] FFmpeg preview stderr: ${stderr}`);
+        reject(new Error(`FFmpeg preview failed with code ${code}`));
+      }
+    });
+
+    ffmpeg.on('error', (error) => {
+      logger.error(`[video_worker] FFmpeg preview spawn error: ${error.message}`);
       reject(error);
     });
   });

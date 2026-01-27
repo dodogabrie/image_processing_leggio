@@ -11,6 +11,7 @@ import Logger, { setLogDirectory, getLogFilePath } from '../backend/Logger.js';
 import { getCsvHeaders, getCsvPreview } from '../backend/workers/organize_by_csv.js';
 import { setupPythonEnv } from '../backend/scripts/setup-python.js';
 import { postProcessResults } from '../backend/postprocessing.js';
+import { checkFFmpegAvailable, createVideoPreview } from '../backend/workers/video_worker.js';
 
 // Shim per __dirname in ES module
 const __filename = fileURLToPath(import.meta.url);
@@ -355,10 +356,13 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
     }
 
     // 4) In preview mode, collect file sizes and skip CSV processing
-    if (previewMode && optimizeImages) {
-      logger.info('[main] Preview mode: collecting file sizes');
+    if (previewMode) {
+      logger.info('[main] Preview mode: collecting file sizes and video preview');
       const previewFileSizes = [];
+      let previewVideoPath = null;
       try {
+        await fs.mkdir(finalOutput, { recursive: true });
+
         // Recursively find all WebP files in output directory
         async function findWebpFiles(dir, collected = []) {
           if (collected.length >= 4) return collected;
@@ -384,12 +388,46 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
           return collected;
         }
 
-        await findWebpFiles(finalOutput, previewFileSizes);
+        if (optimizeImages) {
+          await findWebpFiles(finalOutput, previewFileSizes);
+        }
+
+        // Find first video in input directory for 5s preview
+        async function findFirstVideo(dir) {
+          const stack = [dir];
+          while (stack.length) {
+            const currentDir = stack.pop();
+            const entries = await fs.readdir(currentDir, { withFileTypes: true });
+            for (const entry of entries) {
+              const fullPath = path.join(currentDir, entry.name);
+              if (entry.isDirectory()) {
+                stack.push(fullPath);
+              } else if (/\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(entry.name)) {
+                return fullPath;
+              }
+            }
+          }
+          return null;
+        }
+
+        const firstVideo = await findFirstVideo(dir);
+        if (firstVideo) {
+          const ffmpegAvailable = await checkFFmpegAvailable();
+          if (ffmpegAvailable) {
+            const baseName = path.basename(firstVideo, path.extname(firstVideo));
+            previewVideoPath = path.join(finalOutput, `${baseName}_preview_5s.mp4`);
+            await createVideoPreview(firstVideo, previewVideoPath, { durationSeconds: 5 });
+          } else {
+            logger.warn('[main] Preview video skipped: FFmpeg not available');
+          }
+        } else {
+          logger.info('[main] Preview mode: no video found for preview');
+        }
 
         logger.info(`[main] Preview mode: collected ${previewFileSizes.length} file sizes`);
-        return { success: true, previewFileSizes, outputDir: finalOutput };
+        return { success: true, previewFileSizes, previewVideoPath, outputDir: finalOutput };
       } catch (err) {
-        logger.error('[main] Preview mode file size collection error:', err.message);
+        logger.error('[main] Preview mode error:', err.message);
         return { success: false, error: err.message };
       }
     }
