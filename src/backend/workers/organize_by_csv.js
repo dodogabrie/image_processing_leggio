@@ -821,6 +821,15 @@ export async function organizeFromCsv(
           document: documentFields,
           images: []
         };
+      } else {
+        // Fill missing document fields from later rows
+        const { documentFields } = buildMetadata(record, documentMapping, imageMapping);
+        for (const [key, value] of Object.entries(documentFields)) {
+          const current = folderMetadata[folderSlug].document[key];
+          if ((current == null || current === '') && value != null && value !== '') {
+            folderMetadata[folderSlug].document[key] = value;
+          }
+        }
       }
 
       // Copia immagine o video principale

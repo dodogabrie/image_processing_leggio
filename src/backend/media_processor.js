@@ -76,8 +76,8 @@ const VIDEO_OPTIMIZATION_PROFILES = {
   web: {
     // Visually lossless-ish MP4 (H.264) for speed + compatibility
     codec: 'libx264',
-    crf: 16,
-    preset: 'medium',
+    crf: 23,
+    preset: 'slow',
     maxWidth: 1920,
     maxHeight: 1080,
     audioBitrate: '128k',
@@ -606,7 +606,6 @@ export async function processDir(
         const baseName = path.basename(file, path.extname(file));
         const optimizedDest = path.join(outDir, `${baseName}.mp4`);
         const originalDest = path.join(outDir, file);
-        const srcExt = path.extname(file).toLowerCase();
 
         // Skip if optimized or original video already exists
         let optimizedExists = false;
@@ -629,17 +628,6 @@ export async function processDir(
         } catch {}
 
         try {
-          if (srcExt === '.mp4') {
-            if (!originalExists) {
-              await fs.copyFile(src, originalDest);
-              const stats = await fs.stat(originalDest);
-              originalExists = stats.size > 0;
-              originalSize = stats.size;
-              logger.info(`Copied video (mp4, no transcode): ${file}`);
-            } else {
-              logger.info(`Skipped video (mp4 already exists): ${file}`);
-            }
-          } else {
           if (originalExists) {
             if (optimizedExists && optimizedSize > originalSize) {
               try {
@@ -653,7 +641,22 @@ export async function processDir(
           } else {
             const srcStats = await fs.stat(src);
             // Ottimizza video per il web
-            await optimizeVideo(src, optimizedDest, VIDEO_OPTIMIZATION_PROFILES.web);
+            await optimizeVideo(src, optimizedDest, {
+              ...VIDEO_OPTIMIZATION_PROFILES.web,
+              onProgress: ({ time, total, percent }) => {
+                progressCallback({
+                  type: 'video_processing',
+                  message: (typeof percent === 'number')
+                    ? `Video ${file}: ${percent}%`
+                    : (total ? `Video ${file}: ${time} / ${total}` : `Video ${file}: ${time}`),
+                  currentFolder: path.basename(dir),
+                  currentFile: file,
+                  foldersStatus: folderInfo ? folderInfo.foldersStatus : undefined,
+                  globalImagesTotal: globalStats ? globalStats.globalImagesTotal : undefined,
+                  globalImagesProcessed: globalStats ? globalStats.globalImagesProcessed : undefined
+                });
+              }
+            });
             const outStats = await fs.stat(optimizedDest);
             if (outStats.size > srcStats.size) {
               await fs.unlink(optimizedDest);
@@ -665,7 +668,7 @@ export async function processDir(
             logger.info(`Optimized video: ${file} → ${baseName}.mp4`);
             }
           }
-          }
+          
 
           // Genera thumbnails WebP del video nella cartella thumbnails
           const thumbsVideoDir = path.join(baseOutput, 'thumbnails', relativePath);

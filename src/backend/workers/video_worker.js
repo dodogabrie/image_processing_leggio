@@ -32,7 +32,8 @@ export async function optimizeVideo(inputPath, outputPath, options = {}) {
     videoBitrate = null,
     faststart = true,
     extraArgs = [],
-    scale = true
+    scale = true,
+    onProgress = null
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -58,12 +59,48 @@ export async function optimizeVideo(inputPath, outputPath, options = {}) {
     const ffmpeg = spawn(ffmpegCommand, args);
     let stderr = '';
 
+    function timeToSeconds(t) {
+      const parts = t.split(':');
+      if (parts.length !== 3) return null;
+      const h = Number(parts[0]);
+      const m = Number(parts[1]);
+      const s = Number(parts[2]);
+      if (Number.isNaN(h) || Number.isNaN(m) || Number.isNaN(s)) return null;
+      return h * 3600 + m * 60 + s;
+    }
+
+    let lastProgressTime = null;
+    let totalDuration = null;
     ffmpeg.stderr.on('data', (data) => {
-      stderr += data.toString();
-      // Estrai info di progresso se disponibile
-      const progressMatch = stderr.match(/time=(\d+:\d+:\d+\.\d+)/);
-      if (progressMatch) {
-        logger.info(`[video_worker] Progress: ${progressMatch[1]}`);
+      const chunk = data.toString();
+      stderr += chunk;
+
+      if (!totalDuration) {
+        const durationMatch = chunk.match(/Duration:\s*(\d+:\d+:\d+\.\d+)/);
+        if (durationMatch) {
+          totalDuration = durationMatch[1];
+        }
+      }
+
+      // Estrai info di progresso dal chunk corrente (evita di restare sul primo match)
+      const matches = [...chunk.matchAll(/time=(\d+:\d+:\d+\.\d+)/g)];
+      if (matches.length) {
+        const time = matches[matches.length - 1][1];
+        if (time !== lastProgressTime) {
+          lastProgressTime = time;
+          logger.info(`[video_worker] Progress: ${time}`);
+          if (typeof onProgress === 'function') {
+            let percent = null;
+            if (totalDuration) {
+              const cur = timeToSeconds(time);
+              const tot = timeToSeconds(totalDuration);
+              if (cur != null && tot && tot > 0) {
+                percent = Math.min(100, Math.floor((cur / tot) * 100));
+              }
+            }
+            onProgress({ time, total: totalDuration, percent });
+          }
+        }
       }
     });
 
