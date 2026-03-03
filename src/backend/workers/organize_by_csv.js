@@ -100,8 +100,9 @@ function clampFileBase(value, maxLength) {
 }
 
 /**
- * Costruisce un indice di tutti i file immagine supportati (chiave = basename, valore = info path/estensione)
- * NOTA: se esistono duplicati con lo stesso basename in cartelle diverse, l'ultimo sovrascrive i precedenti.
+ * Costruisce un indice di tutti i file immagine supportati (chiave = basename, valore = info path/estensione).
+ * When duplicates exist (same basename in different folders), the first occurrence is kept
+ * and a warning is logged. Use origin_folder in CSV to disambiguate.
  */
 async function indexImageFiles(rootDir) {
   const fileIndex = new Map();
@@ -120,11 +121,17 @@ async function indexImageFiles(rootDir) {
           if (!IMAGE_EXTENSIONS.includes(ext)) continue;
 
           const base = path.basename(entry.name, ext);
-          fileIndex.set(base, {
-            path: fullPath,
-            ext,
-            relativeDir: path.dirname(path.relative(rootDir, fullPath))
-          });
+          if (fileIndex.has(base)) {
+            logger.warn(
+              `[indexImageFiles] Duplicate basename "${base}": keeping "${fileIndex.get(base).path}", ignoring "${fullPath}". Use origin_folder in CSV to disambiguate.`
+            );
+          } else {
+            fileIndex.set(base, {
+              path: fullPath,
+              ext,
+              relativeDir: path.dirname(path.relative(rootDir, fullPath))
+            });
+          }
         }
       }
     } catch (error) {
@@ -143,8 +150,9 @@ async function indexImageFiles(rootDir) {
 }
 
 /**
- * Costruisce un indice di tutti i file video supportati (chiave = basename, valore = info path/estensione)
- * NOTA: se esistono duplicati con lo stesso basename in cartelle diverse, l'ultimo sovrascrive i precedenti.
+ * Costruisce un indice di tutti i file video supportati (chiave = basename, valore = info path/estensione).
+ * When duplicates exist (same basename in different folders), the first occurrence is kept
+ * and a warning is logged. Use origin_folder in CSV to disambiguate.
  */
 async function indexVideoFiles(rootDir) {
   const fileIndex = new Map();
@@ -163,11 +171,17 @@ async function indexVideoFiles(rootDir) {
           if (!VIDEO_EXTENSIONS.includes(ext)) continue;
 
           const base = path.basename(entry.name, ext);
-          fileIndex.set(base, {
-            path: fullPath,
-            ext,
-            relativeDir: path.dirname(path.relative(rootDir, fullPath))
-          });
+          if (fileIndex.has(base)) {
+            logger.warn(
+              `[indexVideoFiles] Duplicate basename "${base}": keeping "${fileIndex.get(base).path}", ignoring "${fullPath}". Use origin_folder in CSV to disambiguate.`
+            );
+          } else {
+            fileIndex.set(base, {
+              path: fullPath,
+              ext,
+              relativeDir: path.dirname(path.relative(rootDir, fullPath))
+            });
+          }
         }
       }
     } catch (error) {
@@ -287,6 +301,12 @@ function findVideoInDir(dir, identifier) {
  */
 async function resolveOriginFolder(webpDir, originFolder) {
   if (!originFolder) return null;
+
+  // Security: reject path traversal attempts from CSV data
+  if (originFolder.includes('\0') || originFolder.includes('..') || path.isAbsolute(originFolder)) {
+    logger.error(`[resolveOriginFolder] Rejected unsafe origin_folder value: "${originFolder}"`);
+    return null;
+  }
 
   const directCandidate = path.join(webpDir, originFolder);
   try {
@@ -722,7 +742,7 @@ export async function organizeFromCsv(
   // Costruisci indice delle immagini (usato solo quando origin_folder non è fornito)
   logger.info('[organizeFromCsv] Building file index...');
   const fileIndex = await indexImageFiles(webpDir);
-  const videoRootDir = outputDir;
+  const videoRootDir = webpDir;
   const videoIndex = await indexVideoFiles(videoRootDir);
   if (videoRootDir !== webpDir) {
     const fallbackVideoIndex = await indexVideoFiles(webpDir);

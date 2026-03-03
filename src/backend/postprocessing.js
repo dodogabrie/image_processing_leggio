@@ -127,8 +127,10 @@ export async function postProcessResults(
       // Usa la cartella thumbnails esistente come organized_thumbnails
       try {
         await fs.access(thumbnailsDir);
-        await fs.rename(thumbnailsDir, organizedThumbDir);
-        logger.info(`[postprocessing] Rinominata ${thumbnailsDir} → ${organizedThumbDir}`);
+        // Copy instead of rename to avoid cross-device errors and handle existing target
+        await fs.cp(thumbnailsDir, organizedThumbDir, { recursive: true });
+        await fs.rm(thumbnailsDir, { recursive: true, force: true });
+        logger.info(`[postprocessing] Copiata ${thumbnailsDir} → ${organizedThumbDir}`);
       } catch (err) {
         // Se non esiste thumbnails, crea una cartella vuota
         await fs.mkdir(organizedThumbDir, { recursive: true });

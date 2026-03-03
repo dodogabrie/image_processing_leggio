@@ -14,17 +14,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   cleanupPreview: (outputDir) => ipcRenderer.invoke('cleanup:preview', outputDir),
 
-  onProgressUpdate: callback =>
-    ipcRenderer.on('progress:update', (_e, progress) => callback(progress)),
+  onProgressUpdate: callback => {
+    const handler = (_e, progress) => callback(progress);
+    ipcRenderer.on('progress:update', handler);
+    return () => ipcRenderer.removeListener('progress:update', handler);
+  },
 
-  onCsvProgress: callback =>
-    ipcRenderer.on('csv:progress', (_e, progress) => callback(progress)),
+  onCsvProgress: callback => {
+    const handler = (_e, progress) => callback(progress);
+    ipcRenderer.on('csv:progress', handler);
+    return () => ipcRenderer.removeListener('csv:progress', handler);
+  },
 
-  onZipLog: callback =>
-    ipcRenderer.on('zip:log', (_e, message) => callback(message)),
+  onZipLog: callback => {
+    const handler = (_e, message) => callback(message);
+    ipcRenderer.on('zip:log', handler);
+    return () => ipcRenderer.removeListener('zip:log', handler);
+  },
 
-  onZipDone: callback =>
-    ipcRenderer.on('zip:done', (_e, outputZip) => callback(outputZip)),
+  onZipDone: callback => {
+    const handler = (_e, outputZip) => callback(outputZip);
+    ipcRenderer.on('zip:done', handler);
+    return () => ipcRenderer.removeListener('zip:done', handler);
+  },
 
   hasCsvInFolder: dir => ipcRenderer.invoke('hasCsvInFolder', dir),
 

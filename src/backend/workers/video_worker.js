@@ -218,8 +218,9 @@ export async function generateVideoThumbnails(inputPath, outputDir, baseName, op
     }
   } = options;
 
-  // Prima estrai un frame temporaneo in alta qualità
-  const tempFramePath = path.join(outputDir, `${baseName}_temp_frame.jpg`);
+  // Prima estrai un frame temporaneo in alta qualità (unique suffix to avoid race conditions)
+  const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const tempFramePath = path.join(outputDir, `${baseName}_temp_frame_${uniqueSuffix}.jpg`);
   
   // Estrai frame dal video
   await extractVideoFrame(inputPath, tempFramePath, timeOffset);

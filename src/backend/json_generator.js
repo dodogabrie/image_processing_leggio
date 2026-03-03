@@ -77,7 +77,7 @@ export async function generateDocumentJson(organizedDir, csvPath, mapping) {
         docFields[key] = raw;
       }
     }
-    // Identificatore slug basato sul title
+    // Identificatore slug basato sul title (matches folder names created by organize_by_csv)
     const id = slugify(docFields.title || '', { lower: true, strict: true, locale: 'it' });
     docFields.identifier = id;
     docFields.language = 'it';
@@ -93,7 +93,8 @@ export async function generateDocumentJson(organizedDir, csvPath, mapping) {
     };
     docFields.archive = archiveInfo;
 
-    docMap.set(String(row[mapping.document.identifier] || '').trim(), docFields);
+    // Key by the slugified identifier so lookup on line 108 matches folder names
+    docMap.set(id, docFields);
   }
 
   // 2. Genera JSON per ogni cartella

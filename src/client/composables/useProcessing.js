@@ -1,4 +1,4 @@
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
 /**
  * Composable for managing image/video processing workflow
@@ -288,13 +288,16 @@ export function useProcessing(csvMapping) {
   // Listen for progress updates from backend worker processes
   // ============================================================================
 
+  // Store cleanup functions for IPC listeners
+  const cleanupFns = [];
+
   onMounted(() => {
     /**
      * Main progress update handler
      * Receives updates from image/video processing workers
      * Updates: percentage, folder status, current file, thumbnails
      */
-    window.electronAPI.onProgressUpdate(progress => {
+    cleanupFns.push(window.electronAPI.onProgressUpdate(progress => {
       if (progress.type === 'video_processing') {
         videoProcessingMessage.value = progress.message || 'Attendere, processamento video in corso...'
       } else {
@@ -324,34 +327,38 @@ export function useProcessing(csvMapping) {
       if (progress.currentThumbnail) {
         currentThumbnail.value = progress.currentThumbnail
       }
-    })
+    }))
 
     /**
      * CSV organization progress handler
      * Called during CSV-based file organization phase
      * Shows which CSV rows are being processed
      */
-    window.electronAPI.onCsvProgress(p => {
+    cleanupFns.push(window.electronAPI.onCsvProgress(p => {
       showFolderProgress.value = false
       percent.value = 100
       const { current, total, codice } = p
       let t = `Organizzazione CSV: ${current} di ${total}`
       if (codice) t += `\nUltimo: ${codice}`
       csvText.value = t
-    })
+    }))
 
-    window.electronAPI.onZipLog(message => {
+    cleanupFns.push(window.electronAPI.onZipLog(message => {
       showFolderProgress.value = false
       percent.value = 100
       const base = 'Creazione ZIP in corso...'
       csvText.value = message ? `${base}\n${message}` : base
-    })
+    }))
 
-    window.electronAPI.onZipDone(outputZip => {
+    cleanupFns.push(window.electronAPI.onZipDone(outputZip => {
       showFolderProgress.value = false
       percent.value = 100
       csvText.value = `ZIP completato: ${outputZip}`
-    })
+    }))
+  })
+
+  onBeforeUnmount(() => {
+    cleanupFns.forEach(fn => fn && fn());
   })
 
   // ============================================================================

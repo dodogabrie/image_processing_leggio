@@ -76,10 +76,15 @@ export function cropWorker(input, output) {
 
     child.on('exit', code => {
       log(`EXIT CODE: ${code}`);
-      if (code === 0) resolve();
-      else {
-        log(`ERROR: crop.py exited with code ${code}`);
+      if (code === 0) {
         resolve();
+      } else if (code === 2) {
+        // Exit code 2 = no crop needed (image doesn't require cropping)
+        log(`INFO: crop.py exited with code 2 (no crop needed), continuing without crop`);
+        resolve();
+      } else {
+        log(`ERROR: crop.py exited with code ${code}`);
+        reject(new Error(`crop.py failed with exit code ${code} for input: ${input}`));
       }
     });
   });

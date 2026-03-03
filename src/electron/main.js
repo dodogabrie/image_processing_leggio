@@ -21,6 +21,30 @@ const logger = new Logger();
 let shouldStop = false;
 
 /**
+ * Sanitize a filename to prevent path traversal attacks.
+ * Rejects filenames containing path separators, '..', or null bytes.
+ * @param {string} filename
+ * @returns {string} the sanitized basename
+ * @throws {Error} if filename is invalid
+ */
+function sanitizePublicFilename(filename) {
+  if (!filename || typeof filename !== 'string') {
+    throw new Error('Invalid filename');
+  }
+  // Reject null bytes
+  if (filename.includes('\0')) {
+    throw new Error('Invalid filename: contains null bytes');
+  }
+  // Extract basename to strip any directory components
+  const basename = path.basename(filename);
+  // Reject if basename differs from input (means path separators or .. were present)
+  if (basename !== filename) {
+    throw new Error(`Invalid filename: path traversal detected in "${filename}"`);
+  }
+  return basename;
+}
+
+/**
  * Crea la finestra principale dell'app Electron.
  */
 function createWindow() {
@@ -50,9 +74,10 @@ function createWindow() {
 // Lettura file pubblico
 ipcMain.handle('public:readFile', async (_e, filename) => {
   try {
+    const safeName = sanitizePublicFilename(filename);
     const publicPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'public', filename)
-      : path.join(process.cwd(), 'public', filename);
+      ? path.join(process.resourcesPath, 'public', safeName)
+      : path.join(process.cwd(), 'public', safeName);
     return await fs.readFile(publicPath, 'utf-8');
   } catch (err) {
     logger.error('[main] public:readFile error:', err.message);
@@ -63,9 +88,10 @@ ipcMain.handle('public:readFile', async (_e, filename) => {
 // Scrittura file pubblico
 ipcMain.handle('public:writeFile', async (_e, filename, content) => {
   try {
+    const safeName = sanitizePublicFilename(filename);
     const publicPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'public', filename)
-      : path.join(process.cwd(), 'public', filename);
+      ? path.join(process.resourcesPath, 'public', safeName)
+      : path.join(process.cwd(), 'public', safeName);
     await fs.writeFile(publicPath, content, 'utf-8');
     return { success: true };
   } catch (err) {
@@ -77,9 +103,10 @@ ipcMain.handle('public:writeFile', async (_e, filename, content) => {
 // Eliminazione file pubblico
 ipcMain.handle('public:deleteFile', async (_e, filename) => {
   try {
+    const safeName = sanitizePublicFilename(filename);
     const publicPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'public', filename)
-      : path.join(process.cwd(), 'public', filename);
+      ? path.join(process.resourcesPath, 'public', safeName)
+      : path.join(process.cwd(), 'public', safeName);
     await fs.unlink(publicPath);
     return { success: true };
   } catch (err) {
@@ -99,11 +126,23 @@ ipcMain.handle('fs:readDir', async (_e, dir) => {
 });
 
 // Handler per leggere thumbnail come base64 data URL
+const ALLOWED_IMAGE_EXTENSIONS = ['.webp', '.jpg', '.jpeg', '.png', '.tif', '.tiff'];
+const MAX_IMAGE_READ_SIZE = 50 * 1024 * 1024; // 50MB limit for base64 conversion
+
 ipcMain.handle('fs:readThumbnailAsDataUrl', async (_e, filePath) => {
   try {
+    const ext = path.extname(filePath).toLowerCase();
+    if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
+      logger.warn('[main] fs:readThumbnailAsDataUrl rejected non-image extension:', ext);
+      return null;
+    }
+    const stats = await fs.stat(filePath);
+    if (stats.size > MAX_IMAGE_READ_SIZE) {
+      logger.warn('[main] fs:readThumbnailAsDataUrl file too large:', stats.size);
+      return null;
+    }
     const buffer = await fs.readFile(filePath);
     const base64 = buffer.toString('base64');
-    const ext = path.extname(filePath).toLowerCase();
     let mimeType = 'image/webp'; // Default
 
     if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
@@ -119,9 +158,18 @@ ipcMain.handle('fs:readThumbnailAsDataUrl', async (_e, filePath) => {
 // Handler per leggere un'immagine completa come data URL (per la modal)
 ipcMain.handle('fs:readImageAsDataUrl', async (_e, filePath) => {
   try {
+    const ext = path.extname(filePath).toLowerCase();
+    if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
+      logger.warn('[main] fs:readImageAsDataUrl rejected non-image extension:', ext);
+      return null;
+    }
+    const stats = await fs.stat(filePath);
+    if (stats.size > MAX_IMAGE_READ_SIZE) {
+      logger.warn('[main] fs:readImageAsDataUrl file too large:', stats.size);
+      return null;
+    }
     const buffer = await fs.readFile(filePath);
     const base64 = buffer.toString('base64');
-    const ext = path.extname(filePath).toLowerCase();
     let mimeType = 'image/webp';
 
     if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
@@ -560,14 +608,23 @@ app.whenReady().then(() => {
       return new Response('Forbidden', { status: 403 });
     }
 
+    // Security: resolve symlinks and verify the real path doesn't contain traversal
+    let resolvedPath;
+    try {
+      resolvedPath = fsSync.realpathSync(normalizedPath);
+    } catch {
+      logger.warn('[main] media-file not found:', normalizedPath);
+      return new Response('Not Found', { status: 404 });
+    }
+
     // Security: ensure file exists and is a file (not directory)
-    if (!fsSync.existsSync(normalizedPath) || !fsSync.statSync(normalizedPath).isFile()) {
-      logger.warn('[main] media-file not found or not a file:', normalizedPath);
+    if (!fsSync.statSync(resolvedPath).isFile()) {
+      logger.warn('[main] media-file not a file:', resolvedPath);
       return new Response('Not Found', { status: 404 });
     }
 
     // Serve the file using net.fetch with file:// URL
-    return net.fetch(pathToFileURL(normalizedPath).toString());
+    return net.fetch(pathToFileURL(resolvedPath).toString());
   });
 
   createWindow();
