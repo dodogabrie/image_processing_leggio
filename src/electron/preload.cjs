@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   hasCsvInFolder: dir => ipcRenderer.invoke('hasCsvInFolder', dir),
 
+  selectDataFile: dir => ipcRenderer.invoke('csv:selectDataFile', dir),
+
   readDir: (dir) => ipcRenderer.invoke('fs:readDir', dir),
 
   readThumbnailAsDataUrl: (filePath) => ipcRenderer.invoke('fs:readThumbnailAsDataUrl', filePath),

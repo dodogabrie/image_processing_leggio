@@ -15,7 +15,8 @@
     "archive_path": "Percorso completo dell'archivio (es. 'Archivio/Fondo/SubFondo')",
     "archive_name": "Nome del livello corrente dell'archivio",
     "parent_archive": "Nome dell'archivio genitore",
-    "archive_description_prefix": "Prefisso per le colonne CSV contenenti la descrizione multilingua dell'archivio (es. Descrizione Archivio_it)"
+    "archive_description_prefix": "Prefisso per le colonne CSV contenenti la descrizione multilingua dell'archivio (es. Descrizione Archivio_it)",
+    "reading_mode": "Modalità di lettura: 'single_page' per pagina singola, 'two_pages' per modalità libro con sfogliamento"
   },
   "image": {
     "filename": "Nome del file immagine (con o senza estensione)",

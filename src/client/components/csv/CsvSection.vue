@@ -72,11 +72,7 @@ watch(() => processing.selectedFolder.value, async (folder) => {
     return
   }
 
-  const files = await window.electronAPI.readDir(folder)
-  const csvFile = files.find(f => {
-    const lower = f.toLowerCase()
-    return lower.endsWith('.csv') || lower.endsWith('.xlsx')
-  })
+  const csvFile = await window.electronAPI.selectDataFile(folder)
   if (!csvFile) {
     csvMapping.showMapping.value = false
     csvMapping.csvMappingFile.value = ''

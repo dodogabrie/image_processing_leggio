@@ -10,7 +10,7 @@ import { processDir } from '../backend/media_processor.js';
 import Logger, { setLogDirectory, getLogFilePath } from '../backend/Logger.js';
 import { getCsvHeaders, getCsvPreview } from '../backend/workers/organize_by_csv.js';
 import { setupPythonEnv } from '../backend/scripts/setup-python.js';
-import { postProcessResults } from '../backend/postprocessing.js';
+import { postProcessResults, findDataFiles } from '../backend/postprocessing.js';
 import { checkFFmpegAvailable, createVideoPreview } from '../backend/workers/video_worker.js';
 
 // Shim per __dirname in ES module
@@ -300,6 +300,24 @@ ipcMain.handle('hasCsvInFolder', async (_e, dir) => {
   }
 });
 
+ipcMain.handle('csv:selectDataFile', async (_e, dir) => {
+  const candidates = await findDataFiles(dir);
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return path.basename(candidates[0]);
+
+  const fileNames = candidates.map(f => path.basename(f));
+  const { response } = await dialog.showMessageBox(BrowserWindow.getFocusedWindow(), {
+    type: 'question',
+    title: 'Seleziona file dati',
+    message: `Trovati ${candidates.length} file CSV/XLSX nella cartella.\nQuale vuoi utilizzare?`,
+    buttons: [...fileNames, 'Annulla'],
+    cancelId: fileNames.length,
+  });
+  if (response === fileNames.length) return null;
+  logger.info(`[main] Utente ha selezionato file dati: ${fileNames[response]}`);
+  return fileNames[response];
+});
+
 /**
  * Handler principale per l'elaborazione delle immagini, CSV e ZIP.
  */
@@ -425,6 +443,31 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
         }
 
         logger.info(`[main] Preview mode: collected ${previewFileSizes.length} file sizes`);
+
+        // Preview mode: anche organizzazione CSV → metadata.json (senza ZIP)
+        try {
+          const webpSourceDir = optimizeImages ? finalOutput : dir;
+          const dataFiles = await findDataFiles(dir);
+          const previewCsvPath = dataFiles.length > 0 ? dataFiles[0] : null;
+          if (previewCsvPath) {
+            logger.info(`[main] Preview mode: organizzazione CSV (skipZip) con ${previewCsvPath}`);
+            await postProcessResults(
+              dir,
+              finalOutput,
+              maxCsvLine,
+              csvMapping,
+              webContents,
+              webpSourceDir,
+              previewCsvPath,
+              true // skipZip
+            );
+          } else {
+            logger.info('[main] Preview mode: nessun CSV/XLSX trovato, salto organizzazione');
+          }
+        } catch (err) {
+          logger.warn(`[main] Preview mode: organizzazione CSV fallita (non bloccante): ${err.message}`);
+        }
+
         return { success: true, previewFileSizes, previewVideoPath, outputDir: finalOutput };
       } catch (err) {
         logger.error('[main] Preview mode error:', err.message);
@@ -437,7 +480,29 @@ ipcMain.handle('process:images', async (event, dir, outputDir = null, maxCsvLine
       logger.info('[main] Avvio post-processing CSV e ZIP');
       try {
         const webpSourceDir = optimizeImages ? finalOutput : dir;
-        await postProcessResults(dir, finalOutput, maxCsvLine, csvMapping, webContents, webpSourceDir);
+
+        // Find data files and let user choose if multiple
+        let selectedCsvPath = null;
+        const dataFiles = await findDataFiles(dir);
+        if (dataFiles.length > 1) {
+          const fileNames = dataFiles.map(f => path.basename(f));
+          const { response } = await dialog.showMessageBox(BrowserWindow.getFocusedWindow(), {
+            type: 'question',
+            title: 'Seleziona file dati',
+            message: `Trovati ${dataFiles.length} file CSV/XLSX nella cartella di input.\nQuale vuoi utilizzare?`,
+            buttons: [...fileNames, 'Annulla'],
+            cancelId: fileNames.length,
+          });
+          if (response === fileNames.length) {
+            return { success: false, error: 'Selezione file dati annullata.' };
+          }
+          selectedCsvPath = dataFiles[response];
+          logger.info(`[main] Utente ha selezionato: ${selectedCsvPath}`);
+        } else if (dataFiles.length === 1) {
+          selectedCsvPath = dataFiles[0];
+        }
+
+        await postProcessResults(dir, finalOutput, maxCsvLine, csvMapping, webContents, webpSourceDir, selectedCsvPath);
       } catch (err) {
         logger.error('[main] postProcessResults error:', err.message);
         return { success: false, error: err.message };

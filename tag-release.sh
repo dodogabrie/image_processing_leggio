@@ -2,6 +2,12 @@
 
 # Simple script to create a new tag and keep only the 3 most recent tags
 
+# Ensure we're inside a git repo
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Not inside a git repository."
+    exit 1
+fi
+
 # Check if tag name was provided
 if [ -z "$1" ]; then
     echo "Usage: ./tag-release.sh <tag-name> [message]"
@@ -11,7 +17,26 @@ if [ -z "$1" ]; then
 fi
 
 TAG_NAME=$1
-TAG_MESSAGE=$2
+shift
+TAG_MESSAGE="$*"
+
+# Refresh local view of tags
+git fetch --tags >/dev/null 2>&1 || true
+
+# If the tag already exists locally or remotely, stop here
+if git show-ref --tags --quiet "refs/tags/$TAG_NAME"; then
+    echo "Tag already exists locally: $TAG_NAME"
+    echo "If you need to move it, use ./retag-last.sh or delete it first."
+    exit 1
+fi
+
+if git ls-remote --tags origin "refs/tags/$TAG_NAME" >/dev/null 2>&1; then
+    if [ -n "$(git ls-remote --tags origin "refs/tags/$TAG_NAME")" ]; then
+        echo "Tag already exists on remote: $TAG_NAME"
+        echo "If you need to move it, delete it first or use ./retag-last.sh."
+        exit 1
+    fi
+fi
 
 if [ -z "$TAG_MESSAGE" ]; then
     echo "Creating tag: $TAG_NAME"
@@ -32,8 +57,22 @@ git tag --list | sort -V
 echo ""
 echo "Keeping only the 3 most recent tags..."
 
-# Get all tags sorted by version, skip the last 3 (most recent)
-TAGS_TO_DELETE=$(git tag --list | sort -V | head -n -3)
+# Get all tags sorted by version (ignoring leading v or v.), skip the last 3 (most recent)
+TAGS_TO_DELETE=$(
+    git tag --list \
+    | while read -r tag; do
+        norm=$(echo "$tag" | sed 's/^v\\.//; s/^v//')
+        printf '%s %s\n' "$norm" "$tag"
+      done \
+    | sort -V \
+    | awk '{print $2}' \
+    | head -n -3
+)
+
+# Never delete the tag we just created
+if [ -n "$TAGS_TO_DELETE" ]; then
+    TAGS_TO_DELETE=$(echo "$TAGS_TO_DELETE" | grep -v -x "$TAG_NAME" || true)
+fi
 
 if [ -z "$TAGS_TO_DELETE" ]; then
     echo "No old tags to delete. Done!"

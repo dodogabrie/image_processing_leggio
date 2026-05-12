@@ -6,6 +6,7 @@ import slugify from 'slugify';
 import crypto from 'crypto';
 import Logger from '../Logger.js';
 import { readTabularHeaders, readTabularRecords } from '../utils/tabular-reader.js';
+import { groupHeadersByBase, baseHasLanguageVariants } from '../scripts/language-tags.js';
 
 const logger = new Logger();
 
@@ -19,7 +20,7 @@ const logger = new Logger();
  */
 const SPECIAL_FIELDS = [
   'identifier', 'origin_folder', 'groupBy', 'active', 'date',
-  'language', 'metadata_available', 'metadata_just_year'
+  'language', 'metadata_available', 'metadata_just_year', 'archive_path', 'reading_mode'
 ];
 
 /**
@@ -334,43 +335,32 @@ async function resolveOriginFolder(webpDir, originFolder) {
 // =============================================================================
 
 /**
- * Estrae e raggruppa valori multi-lingua da un record CSV
- * Supporta:
- *   - prefix_lang (es: title_en, title_it)
- *   - prefix[lang] (es: title[en], title[it])
+ * Estrae e raggruppa valori multi-lingua da un record.
+ * Supporta tutte le notazioni di language-tags.js:
+ *   - prefix[lang]
+ *   - prefix_lang  (solo ISO whitelisted)
+ *   - prefix (TRADUZIONE IN <lingua>)
+ *   - prefix (<lang> TRANSLATION)
+ * Le varianti non taggate che condividono il prefisso canonico vengono trattate come 'it'.
+ *
+ * @param {Object} record - riga del CSV/XLSX
+ * @param {{basesByHeader: Map, langByHeader: Map, langsByBase: Object}} [headerInfo]
+ *        Risultato pre-calcolato di groupHeadersByBase(); se assente, lo calcola al volo.
  */
-function extractLanguageGroups(record) {
+function extractLanguageGroups(record, headerInfo) {
+  const info = headerInfo || groupHeadersByBase(Object.keys(record));
+  const { basesByHeader, langByHeader, langsByBase } = info;
   const languageGroups = {};
 
-  for (const [fieldName, value] of Object.entries(record)) {
-    if (!value || value === '') continue;
-
-    let prefix, language;
-
-    // Formato: prefix_lang (es: title_en, title_it)
-    if (fieldName.includes('_')) {
-      const parts = fieldName.split('_');
-      if (parts.length >= 2) {
-        language = parts[parts.length - 1];
-        prefix = parts.slice(0, -1).join('_');
-      }
-    }
-
-    // Formato: prefix[lang] (es: title[en], title[it])
-    else if (fieldName.includes('[') && fieldName.includes(']')) {
-      const match = fieldName.match(/^(.+)\[([^\]]+)\]$/);
-      if (match) {
-        prefix = match[1];
-        language = match[2];
-      }
-    }
-
-    if (prefix && language) {
-      if (!languageGroups[prefix]) {
-        languageGroups[prefix] = {};
-      }
-      languageGroups[prefix][language] = value;
-    }
+  for (const [header, value] of Object.entries(record)) {
+    if (value == null || value === '') continue;
+    const base = basesByHeader.get(header);
+    if (!base) continue;
+    if (!baseHasLanguageVariants(langsByBase, base)) continue;
+    const lang = langByHeader.get(header);
+    if (!lang || lang === 'default') continue;
+    if (!languageGroups[base]) languageGroups[base] = {};
+    languageGroups[base][lang] = value;
   }
 
   return languageGroups;
@@ -378,31 +368,38 @@ function extractLanguageGroups(record) {
 
 /**
  * Costruisce il valore di un campo, gestendo multi-lingua e campi speciali.
+ * `csvColumnName` può essere:
+ *   - un header reale ("title[en]" o "TITOLO PER LEGGIO\n(TRADUZIONE IN INGLESE)")
+ *   - il prefisso canonico ("TITOLO PER LEGGIO")
+ *   - una variante non taggata che funge da rappresentante italiano
  */
-function buildFieldValue(record, csvColumnName, mappingKey) {
-  // I campi speciali non supportano multi-lingua
+function buildFieldValue(record, csvColumnName, mappingKey, headerInfo) {
+  // Special fields = single value, no multi-language
   if (SPECIAL_FIELDS.includes(mappingKey)) {
     return record[csvColumnName] ?? '';
   }
 
-  // Determina il prefisso rimuovendo suffissi di lingua
-  let prefix = csvColumnName.replace(/\[[^\]]+\]$/, ''); // Rimuove [lang]
-  if (prefix.includes('_')) {
-    const parts = prefix.split('_');
-    if (parts.length >= 2) {
-      prefix = parts.slice(0, -1).join('_');
+  const info = headerInfo || groupHeadersByBase(Object.keys(record));
+  const { basesByHeader, langsByBase } = info;
+
+  // Determina la base canonica per la colonna mappata
+  let base = basesByHeader.get(csvColumnName);
+  if (!base) {
+    // csvColumnName può essere il prefisso canonico stesso → cerca tra le basi
+    if (langsByBase[csvColumnName]) {
+      base = csvColumnName;
     }
   }
 
-  // Cerca gruppi di lingua per questo prefisso
-  const languageGroups = extractLanguageGroups(record);
-  const languageGroup = languageGroups[prefix];
-
-  if (languageGroup && Object.keys(languageGroup).length > 0) {
-    return languageGroup; // Restituisce oggetto multi-lingua
+  if (base && baseHasLanguageVariants(langsByBase, base)) {
+    const groups = extractLanguageGroups(record, info);
+    const group = groups[base];
+    if (group && Object.keys(group).length > 0) {
+      return group;
+    }
   }
 
-  // Fallback a valore singolo
+  // Fallback: valore singolo dalla colonna esatta
   return record[csvColumnName] ?? '';
 }
 
@@ -620,18 +617,18 @@ async function copyVideoThumbnails({
 /**
  * Costruisce i metadati per un record CSV (document + image) usando il mapping.
  */
-function buildMetadata(record, documentMapping, imageMapping) {
+function buildMetadata(record, documentMapping, imageMapping, headerInfo) {
   const documentFields = {};
   const imageFields = {};
 
   // Costruisci campi documento
   for (const [mappingKey, csvColumn] of Object.entries(documentMapping)) {
-    documentFields[mappingKey] = buildFieldValue(record, csvColumn, mappingKey);
+    documentFields[mappingKey] = buildFieldValue(record, csvColumn, mappingKey, headerInfo);
   }
 
   // Costruisci campi immagine
   for (const [mappingKey, csvColumn] of Object.entries(imageMapping)) {
-    imageFields[mappingKey] = buildFieldValue(record, csvColumn, mappingKey);
+    imageFields[mappingKey] = buildFieldValue(record, csvColumn, mappingKey, headerInfo);
   }
 
   return { documentFields, imageFields };
@@ -752,6 +749,11 @@ export async function organizeFromCsv(
   logger.info(`[organizeFromCsv] Processing ${records.length} records`);
   progressCallback({ current: 0, total: records.length, codice: 'Avvio organizzazione CSV' });
 
+  // Pre-calcola l'analisi degli header per usarla in tutto il loop (multi-lingua)
+  const headerInfo = records.length > 0
+    ? groupHeadersByBase(Object.keys(records[0]))
+    : { basesByHeader: new Map(), langByHeader: new Map(), langsByBase: {}, representative: [] };
+
   // =============================================================================
   // DIRECTORY SETUP
   // =============================================================================
@@ -816,14 +818,14 @@ export async function organizeFromCsv(
 
       // Inizializza metadati cartella se prima volta
       if (!folderMetadata[folderSlug]) {
-        const { documentFields } = buildMetadata(record, documentMapping, imageMapping);
+        const { documentFields } = buildMetadata(record, documentMapping, imageMapping, headerInfo);
         folderMetadata[folderSlug] = {
           document: documentFields,
           images: []
         };
       } else {
         // Fill missing document fields from later rows
-        const { documentFields } = buildMetadata(record, documentMapping, imageMapping);
+        const { documentFields } = buildMetadata(record, documentMapping, imageMapping, headerInfo);
         for (const [key, value] of Object.entries(documentFields)) {
           const current = folderMetadata[folderSlug].document[key];
           if ((current == null || current === '') && value != null && value !== '') {
@@ -880,7 +882,7 @@ export async function organizeFromCsv(
       }
 
       if (copiedMedia) {
-        const { imageFields } = buildMetadata(record, documentMapping, imageMapping);
+        const { imageFields } = buildMetadata(record, documentMapping, imageMapping, headerInfo);
         folderMetadata[folderSlug].images.push(imageFields);
       }
 

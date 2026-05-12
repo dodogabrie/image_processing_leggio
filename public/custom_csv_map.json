@@ -1,10 +1,18 @@
 {
   "document": {
-    "identifier": "NOME FILE",
-    "title": "TITOLO",
-    "groupBy": "TITOLO"
+    "identifier": "Codice",
+    "groupBy": "TITOLO PER LEGGIO",
+    "title": "TITOLO PER LEGGIO",
+    "active": "MOSTRARE NEL LEGGIO",
+    "creator": "AUTORE SCATTO",
+    "date": "DATA",
+    "periodo": "PERIODO",
+    "tags": "CATEGORIA IN PROGRESS"
   },
   "image": {
-    "filename": "NOME FILE"
+    "filename": "Codice",
+    "sequence_number": "1",
+    "active": "MOSTRARE NEL LEGGIO",
+    "rich_description_prefix": "DIDASCALIA PER LEGGIO"
   }
 }

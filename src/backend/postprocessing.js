@@ -33,6 +33,27 @@ async function copyDir(src, dest) {
 }
 
 /**
+ * Cerca tutti i file CSV/XLSX nella directory di input.
+ * @param {string} dir - Directory di input.
+ * @returns {Promise<string[]>} Lista di percorsi completi ai file trovati.
+ */
+export async function findDataFiles(dir) {
+  try {
+    const files = await fs.readdir(dir);
+    return files
+      .filter(f => {
+        const lower = f.toLowerCase();
+        return lower.endsWith('.csv') || lower.endsWith('.xlsx');
+      })
+      .sort()
+      .map(f => path.join(dir, f));
+  } catch (err) {
+    logger.warn('[postprocessing] Errore lettura directory:', err.message);
+    return [];
+  }
+}
+
+/**
  * Esegue post-processing: ordinamento da CSV (se presente) e creazione ZIP.
  * @param {string} dir - Directory di input (contenente eventuale CSV).
  * @param {string} finalOutput - Directory di output per organizzati e ZIP.
@@ -40,6 +61,8 @@ async function copyDir(src, dest) {
  * @param {Object|null} csvMapping - Mappatura colonne CSV.
  * @param {Electron.WebContents} webContents - Canale per invio progress log.
  * @param {string} webpSourceDir - Directory da cui leggere le immagini (può essere diversa da finalOutput se si salta l'ottimizzazione)
+ * @param {string|null} csvPath - Percorso al file CSV/XLSX da usare. Se null, cerca automaticamente (primo trovato).
+ * @param {boolean} skipZip - Se true, salta la creazione dello ZIP (utile in preview mode).
  * @throws Error in caso di fallimento.
  */
 export async function postProcessResults(
@@ -48,19 +71,14 @@ export async function postProcessResults(
   maxCsvLine = null,
   csvMapping = null,
   webContents,
-  webpSourceDir = finalOutput
+  webpSourceDir = finalOutput,
+  csvPath = null,
+  skipZip = false
 ) {
   // 1) Organizza da CSV
-  let csvPath = null;
-  try {
-    const files = await fs.readdir(dir);
-    const found = files.find(f => {
-      const lower = f.toLowerCase();
-      return lower.endsWith('.csv') || lower.endsWith('.xlsx');
-    });
-    if (found) csvPath = path.join(dir, found);
-  } catch (err) {
-    logger.warn('[postprocessing] Errore lettura directory:', err.message);
+  if (!csvPath) {
+    const candidates = await findDataFiles(dir);
+    if (candidates.length > 0) csvPath = candidates[0];
   }
 
   logger.info(`[postprocessing] CSV Mapping: ${JSON.stringify(csvMapping)}`);
@@ -135,6 +153,11 @@ export async function postProcessResults(
         logger.warn(`[postprocessing] Cartella thumbnails non trovata, creata cartella vuota: ${organizedThumbDir}`);
       }
     }
+  }
+
+  if (skipZip) {
+    logger.info('[postprocessing] skipZip=true: salto creazione ZIP');
+    return;
   }
 
   const zipWorkerPath = path.join(__dirname, 'workers', 'zip_worker.js');

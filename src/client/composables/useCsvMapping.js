@@ -1,4 +1,5 @@
 import { ref, reactive, computed } from 'vue'
+import { groupHeadersByBase } from '../../backend/scripts/language-tags.js'
 
 /**
  * Composable per gestire la logica di mappatura CSV → Database
@@ -95,34 +96,11 @@ export function useCsvMapping() {
    * - languagesByBase: lingue disponibili per ciascun prefisso
    */
   function parseCsvHeaders(csvHeaders) {
-    const seenBases = new Set()
-    const langsByBase = {}
-    filteredHeaders.value = []
-
-    csvHeaders.forEach(header => {
-      const m = header.match(/^(.*)\[([^\]]+)\]$/)
-      if (m) {
-        const [ , base, lang ] = m
-        langsByBase[base] ??= new Set()
-        langsByBase[base].add(lang)
-
-        if (!seenBases.has(base)) {
-          seenBases.add(base)
-          filteredHeaders.value.push(header) // prima occorrenza per base
-        }
-      } else {
-        langsByBase[header] = new Set(['default'])
-        if (!seenBases.has(header)) {
-          seenBases.add(header)
-          filteredHeaders.value.push(header)
-        }
-      }
-    })
-
-    // converto i Set in array ordinati
-    return Object.fromEntries(
-      Object.entries(langsByBase).map(([base, langs]) => [base, [...langs].sort()])
-    )
+    const { basesByHeader, langsByBase, representative } = groupHeadersByBase(csvHeaders || [])
+    filteredHeaders.value = representative.slice()
+    // Expose for resolution step
+    parseCsvHeaders._lastBasesByHeader = basesByHeader
+    return langsByBase
   }
 
   /**
@@ -173,7 +151,8 @@ export function useCsvMapping() {
           ) || ''
 
           if (matchHeader) {
-            const basePrefix = matchHeader.replace(/\[[^\]]+\]$/, '')
+            const basesByHeader = parseCsvHeaders._lastBasesByHeader
+            const basePrefix = basesByHeader ? basesByHeader.get(matchHeader) : matchHeader
             langs = langsByBase[basePrefix] || []
           }
         }

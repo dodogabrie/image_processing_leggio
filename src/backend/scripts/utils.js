@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import EXCLUDED_FOLDERS from './excluded_folders.js';
+import { groupHeadersByBase, baseHasLanguageVariants } from './language-tags.js';
 
 const excludedSet = new Set(
   EXCLUDED_FOLDERS.map(name => name.toLowerCase())
@@ -70,23 +71,43 @@ export async function getAllFolders(rootDir, maxDepth = 50, maxPathLength = 3500
 }
 
 /**
- * Extracts multi-language fields from a CSV record based on a prefix.
- * @param {Object} record - The CSV record (row).
- * @param {string} prefix - The prefix for the multi-language columns (e.g., 'archive_description').
- * @returns {Object} - An object with language codes as keys and the field values as values.
+ * Extracts multi-language fields from a record using the shared language-tag detector.
+ * `prefix` may be the canonical base ("TITLE", "TITOLO PER LEGGIO") or any of the
+ * concrete header variants ("title[en]", "TITOLO PER LEGGIO\n(TRADUZIONE IN INGLESE)").
+ * Returns an object keyed by ISO 639-1 language code.
+ *
+ * @param {Object} record
+ * @param {string} prefix
+ * @returns {Object}
  */
 export function extractMultiLanguageField(record, prefix) {
-  const multiLanguageFields = {};
-  if (!prefix) {
-    return multiLanguageFields;
-  }
-  for (const [key, value] of Object.entries(record)) {
-    if (key.toLowerCase().startsWith(prefix.toLowerCase())) {
-      const lang = key.substring(prefix.length).replace(/^_/, '');
-      if (lang && value) {
-        multiLanguageFields[lang.toLowerCase()] = value;
-      }
+  const out = {};
+  if (!prefix || !record) return out;
+
+  const info = groupHeadersByBase(Object.keys(record));
+  const { basesByHeader, langByHeader, langsByBase } = info;
+
+  // Resolve the canonical base for the supplied prefix
+  let base = basesByHeader.get(prefix);
+  if (!base) {
+    if (langsByBase[prefix]) {
+      base = prefix;
+    } else {
+      // Case-insensitive lookup: prefix is the canonical base ignoring case
+      const lower = prefix.toLowerCase();
+      base = Object.keys(langsByBase).find(b => b.toLowerCase() === lower) || null;
     }
   }
-  return multiLanguageFields;
+
+  if (!base || !baseHasLanguageVariants(langsByBase, base)) return out;
+
+  for (const [header, value] of Object.entries(record)) {
+    if (value == null || value === '') continue;
+    if (basesByHeader.get(header) !== base) continue;
+    const lang = langByHeader.get(header);
+    if (!lang || lang === 'default') continue;
+    out[lang] = value;
+  }
+
+  return out;
 }
