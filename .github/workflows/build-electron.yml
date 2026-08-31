@@ -84,6 +84,8 @@ jobs:
   release:
       needs: [build, build-mac, build-linux]
       runs-on: ubuntu-latest
+      permissions:
+        contents: write
       steps:
         - name: Download Windows artifact
           uses: actions/download-artifact@v4
@@ -116,6 +118,6 @@ jobs:
               dist-linux/*.AppImage
               dist-linux/*.deb
           env:
-            GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         # Rimuovi i due step separati di upload dato che ora files è incluso sopra
