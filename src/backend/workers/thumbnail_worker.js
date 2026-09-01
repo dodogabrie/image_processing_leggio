@@ -10,7 +10,8 @@ async function main() {
   const opts = JSON.parse(aliasOptions);
   try {
     // Usa sempre fit: 'inside' per evitare crop
-    let img = sharp(input).resize(opts.size[0], opts.size[1], { fit: 'inside' });
+    // autoOrient: vedi webp_worker.js, senza questo le foto verticali escono coricate.
+    let img = sharp(input, { autoOrient: true }).resize(opts.size[0], opts.size[1], { fit: 'inside' });
     img = img.toFormat(opts.format, { quality: opts.quality });
     await img.toFile(output);
     process.exit(0);

@@ -40,7 +40,9 @@ async function logError(err) {
     quality = Math.max(15, Math.min(quality, 100));
 
     // Load image and get metadata
-    const image = sharp(input);
+    // autoOrient: l'orientamento sta solo nell'EXIF e il WebP lo scarta,
+    // senza questo le foto verticali escono coricate.
+    const image = sharp(input, { autoOrient: true });
     const metadata = await image.metadata();
 
     // Max dimension: 4K (3840px on longest side)
